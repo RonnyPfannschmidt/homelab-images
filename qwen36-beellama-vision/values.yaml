@@ -1,0 +1,24 @@
+admin: ""
+bfl:
+  username: ""
+workloadReplicas:
+  llminit: 1
+  llamacppqwen36beellamavisionone: 1
+userspace:
+  appData: ""
+  appCache: ""
+  userData: ""
+olaresEnv: {}
+model:
+  target:
+    repo: unsloth/Qwen3.6-27B-GGUF
+    file: Qwen3.6-27B-UD-Q3_K_XL.gguf
+  mmproj:
+    repo: unsloth/Qwen3.6-27B-GGUF
+    file: mmproj-F16.gguf
+  draft:
+    repo: spiritbuun/Qwen3.6-27B-DFlash-GGUF
+    file: dflash-draft-3.6-q8_0.gguf
+  alias: qwen3.6-27b-beellama-vision
+  ctxSize: "200000"
+  threads: "16"
