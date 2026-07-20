@@ -40,66 +40,51 @@ metadata:
   name: beellama-vision-wrapper
   namespace: "{{ .Release.Namespace }}"
 data:
-  beellama-vision.sh: |
-    #!/bin/sh
-    set -eu
-
-    SENTINEL=${SENTINEL:-/run/llm-init/model_download_finish}
-    WAIT_INTERVAL=${WAIT_INTERVAL:-5}
-    WAIT_TIMEOUT=${WAIT_TIMEOUT:-3600}
-    HF_HUB_CACHE=${HF_HUB_CACHE:-/cache/hf/hub}
-    log() { printf '[wrapper-beellama-vision] %s\n' "$*"; }
-
-    elapsed=0
-    while [ ! -f "$SENTINEL" ]; do
-        if [ "$elapsed" -ge "$WAIT_TIMEOUT" ]; then
-            log "timed out after ${WAIT_TIMEOUT}s waiting for $SENTINEL"
-            exit 1
-        fi
-        log "waiting for $SENTINEL (elapsed=${elapsed}s)"
-        sleep "$WAIT_INTERVAL"
-        elapsed=$((elapsed + WAIT_INTERVAL))
-    done
-    log "sentinel found after ${elapsed}s"
-
-    find_cached_file() {
-        # huggingface_hub cache layout: models--<org>--<repo>/snapshots/<rev>/<file>
-        repo_dir="$HF_HUB_CACHE/models--$(echo "$1" | sed 's#/#--#')"
-        found=$(find "$repo_dir/snapshots" -name "$2" 2>/dev/null | head -1)
-        if [ -z "$found" ]; then
-            log "ERROR: could not locate $2 under $repo_dir/snapshots"
-            exit 1
-        fi
-        echo "$found"
-    }
-
-    TARGET_PATH=$(find_cached_file "$TARGET_REPO" "$TARGET_FILE")
-    MMPROJ_PATH=$(find_cached_file "$MMPROJ_REPO" "$MMPROJ_FILE")
-    DRAFT_PATH=$(find_cached_file "$DRAFT_REPO" "$DRAFT_FILE")
-
-    log "target=$TARGET_PATH"
-    log "mmproj=$MMPROJ_PATH"
-    log "draft=$DRAFT_PATH"
-
-    cd /app
-    exec ./llama-server \
-        --model "$TARGET_PATH" \
-        --spec-draft-model "$DRAFT_PATH" \
-        --mmproj "$MMPROJ_PATH" \
-        --spec-type dflash \
-        --spec-dflash-cross-ctx 1024 \
-        --alias "${MODEL_ALIAS:-qwen3.6-27b-beellama-vision}" \
-        --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
-        -ngl 99 --spec-draft-ngl 99 \
-        --ctx-size "${CTX_SIZE:-200000}" \
-        --threads "${THREADS:-16}" \
-        --cache-type-k turbo3 --cache-type-v turbo3 \
-        --batch-size 2048 --ubatch-size 2048 \
-        --parallel 1 --kv-unified \
-        --flash-attn on --jinja \
-        --chat-template-file /chat-template/qwen36_chat_template.jinja \
-        --no-mmap --mlock \
-        --temp 0.6 --top-k 20 --min-p 0.0
+    beellama-vision.sh: |
+        #!/bin/sh
+        set -eu
+        
+        HF_HUB_CACHE=${HF_HUB_CACHE:-/cache/hf/hub}
+        log() { printf '[wrapper-beellama-vision] %s\n' "$*"; }
+        
+        find_cached_file() {
+            # huggingface_hub cache layout: models--<org>--<repo>/snapshots/<rev>/<file>
+            repo_dir="$HF_HUB_CACHE/models--$(echo "$1" | sed 's#/#--#')"
+            found=$(find "$repo_dir/snapshots" -name "$2" 2>/dev/null | head -1)
+            if [ -z "$found" ]; then
+                log "ERROR: could not locate $2 under $repo_dir/snapshots"
+                exit 1
+            fi
+            echo "$found"
+        }
+        
+        TARGET_PATH=$(find_cached_file "$TARGET_REPO" "$TARGET_FILE")
+        MMPROJ_PATH=$(find_cached_file "$MMPROJ_REPO" "$MMPROJ_FILE")
+        DRAFT_PATH=$(find_cached_file "$DRAFT_REPO" "$DRAFT_FILE")
+        
+        log "target=$TARGET_PATH"
+        log "mmproj=$MMPROJ_PATH"
+        log "draft=$DRAFT_PATH"
+        
+        cd /app
+        exec ./llama-server \
+            --model "$TARGET_PATH" \
+            --spec-draft-model "$DRAFT_PATH" \
+            --mmproj "$MMPROJ_PATH" \
+            --spec-type dflash \
+            --spec-dflash-cross-ctx 1024 \
+            --alias "${MODEL_ALIAS:-qwen3.6-27b-beellama-vision}" \
+            --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
+            -ngl 99 --spec-draft-ngl 99 \
+            --ctx-size "${CTX_SIZE:-200000}" \
+            --threads "${THREADS:-16}" \
+            --cache-type-k turbo3 --cache-type-v turbo3 \
+            --batch-size 2048 --ubatch-size 2048 \
+            --parallel 1 --kv-unified \
+            --flash-attn on --jinja \
+            --chat-template-file /chat-template/qwen36_chat_template.jinja \
+            --no-mmap --mlock \
+            --temp 0.6 --top-k 20 --min-p 0.0
 ---
 # llm-init: downloads target/mmproj/draft into the platform-shared HF cache,
 # reports progress, and is the app's permanent entrance (progress dashboard
@@ -124,7 +109,7 @@ spec:
         io.kompose.network/chrome-default: "true"
         io.kompose.service: llminit
     spec:
-      initContainers:
+    initContainers:
         - name: init-chown
           image: docker.io/beclab/aboveos-busybox:1.37.0
           command:
@@ -138,7 +123,6 @@ spec:
               name: hf-cache
             - mountPath: /run/llm-init
               name: run-state
-      containers:
         - name: llm-init
           image: docker.io/beclab/llm-init:v1.3.1
           envFrom:
@@ -212,56 +196,7 @@ spec:
               name: hf-cache
             - mountPath: /run/llm-init
               name: run-state
-      dnsPolicy: ClusterFirst
-      volumes:
-        - name: hf-cache
-          hostPath:
-            path: /olares/rootfs/Common/huggingface
-            type: DirectoryOrCreate
-        - name: run-state
-          hostPath:
-            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
-            type: DirectoryOrCreate
-      restartPolicy: Always
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    io.kompose.service: llminit
-  name: llminit
-  namespace: "{{ .Release.Namespace }}"
-spec:
-  ports:
-    - name: llminit
-      port: 8090
-      targetPort: 8090
-  selector:
-    io.kompose.service: llminit
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    io.kompose.service: llamacppqwen36beellamavisionone
-  name: llamacppqwen36beellamavisionone
-  namespace: "{{ .Release.Namespace }}"
-  annotations:
-    applications.app.bytetrade.io/gpu-inject: "true"
-spec:
-  replicas: {{ .Values.workloadReplicas.llamacppqwen36beellamavisionone }}
-  selector:
-    matchLabels:
-      io.kompose.service: llamacppqwen36beellamavisionone
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        io.kompose.network/chrome-default: "true"
-        io.kompose.service: llamacppqwen36beellamavisionone
-    spec:
-      containers:
+       containers:
         - name: beellama-vision-server
           image: "docker.io/aamsellem/beellama-cpp:0.1.3-rc1"
           command: ["/bin/sh", "/llm-init/wrappers/beellama-vision.sh"]
@@ -313,38 +248,21 @@ spec:
             - mountPath: "/chat-template"
               name: chat-template
               readOnly: true
-      volumes:
-        - name: hf-cache
-          hostPath:
-            path: /olares/rootfs/Common/huggingface
-            type: DirectoryOrCreate
-        - name: run-state
-          hostPath:
-            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
-            type: DirectoryOrCreate
-        - name: wrapper
-          configMap:
-            name: beellama-vision-wrapper
-            defaultMode: 365
-        - name: chat-template
-          configMap:
-            name: qwen36-chat-template
-      restartPolicy: Always
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    io.kompose.service: llamacppqwen36beellamavisionone
-  # Named "llamacpp" (not the app name) because llm-init derives the backend
-  # URL as http://<ENGINE_KIND>:8081 with no override (ENGINE_URL was removed
-  # upstream) -- the Service name must match ENGINE_KIND literally.
-  name: llamacpp
-  namespace: "{{ .Release.Namespace }}"
-spec:
-  ports:
-    - name: "beellama-vision"
-      port: 8081
-      targetPort: 8081
-  selector:
-    io.kompose.service: llamacppqwen36beellamavisionone
+       volumes:
+         - name: hf-cache
+           hostPath:
+             path: /olares/rootfs/Common/huggingface
+             type: DirectoryOrCreate
+         - name: run-state
+           hostPath:
+             path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+             type: DirectoryOrCreate
+         - name: wrapper
+           configMap:
+             name: beellama-vision-wrapper
+             defaultMode: 365
+         - name: chat-template
+           configMap:
+             name: qwen36-chat-template
+       restartPolicy: Always
+
