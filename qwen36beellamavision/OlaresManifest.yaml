@@ -4,9 +4,11 @@ olaresManifest.type: app
 apiVersion: 'v3'
 workloadReplicas:
   llminit: 1
-  llamacppqwen36beellamavisionone: 1
+  qwen36beellamavision: 1
 metadata:
-  name: llamacppqwen36beellamavisionone
+  name: qwen36beellamavision
+  # icon filename intentionally keeps the old app id — it points at the existing
+  # asset on aamsellem's external host, which is not renamed by this chart rename.
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.6 27B vision-capable — 106 t/s @ 200K via BeeLlama.cpp + mmproj F16 + DFlash + turbo3 KV"
   title: Qwen36 27B BeeLlama Vision One
@@ -31,7 +33,7 @@ metadata:
       mtp:          { enabled: true, accept: 24 }
     stack: "BeeLlama · DFlash · mmproj BF16"
 entrances:
-  - name: llamacppqwen36beellamavisionone
+  - name: qwen36beellamavision
     port: 8090
     host: llminit
     title: Qwen36 27B BeeLlama Vision

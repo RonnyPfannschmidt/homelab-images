@@ -3,7 +3,7 @@ bfl:
   username: ""
 workloadReplicas:
   llminit: 1
-  llamacppqwen36beellamavisionone: 1
+  qwen36beellamavision: 1
 userspace:
   appData: ""
   appCache: ""
