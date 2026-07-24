@@ -98,7 +98,7 @@ metadata:
   name: llminit
   namespace: "{{ .Release.Namespace }}"
 spec:
-  replicas: {{ .Values.workloadReplicas.llminit }}
+  replicas: {{ .Values.workloads.llminit.replicaCount }}
   selector:
     matchLabels:
       io.kompose.service: llm-init
@@ -148,7 +148,7 @@ spec:
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN
-              value: "{{ .Values.olaresEnv.OLARES_USER_HUGGINGFACE_TOKEN }}"
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
             - name: RUN_DIR
               value: /run/llm-init
             - name: PORT
@@ -216,7 +216,7 @@ metadata:
   name: "{{ .Chart.Name }}"
   namespace: "{{ .Release.Namespace }}"
 spec:
-  replicas: {{ .Values.workloadReplicas.qwen36beellamavision }}
+  replicas: {{ .Values.workloads.qwen36beellamavision.replicaCount }}
   selector:
     matchLabels:
       io.kompose.service: llamacpp
@@ -248,7 +248,7 @@ spec:
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN
-              value: "{{ .Values.olaresEnv.OLARES_USER_HUGGINGFACE_TOKEN }}"
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: PGID
@@ -326,3 +326,40 @@ spec:
       restartPolicy: Always
       runtimeClassName: nvidia
       schedulerName: hami-scheduler
+---
+# Entrance service: OlaresManifest entrances[].host resolves this name — without
+# it the app never leaves `initializing` (entrance readiness probes this Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+  type: ClusterIP
+---
+# Compose service-name alias: llm-init ENGINE_KIND=llamacpp derives the engine
+# proxy target http://llamacpp:$LLAMACPP_PORT, so the GPU server must be
+# reachable under exactly this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamacpp
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llamacpp
+spec:
+  selector:
+    io.kompose.service: llamacpp
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP
