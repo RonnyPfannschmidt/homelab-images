@@ -84,6 +84,7 @@ data:
             --flash-attn on --jinja \
             --chat-template-file /chat-template/qwen36_chat_template.jinja \
             --no-mmap --mlock \
+            --metrics \
             --temp 0.6 --top-k 20 --min-p 0.0
 ---
 # llm-init: downloads target/mmproj/draft into the platform-shared HF cache,
