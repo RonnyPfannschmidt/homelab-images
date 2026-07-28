@@ -21,6 +21,8 @@ model:
   draft:
     repo: spiritbuun/Qwen3.6-27B-DFlash-GGUF
     file: dflash-draft-3.6-q8_0.gguf
-  alias: qwen3.6-27b-beellama-vision
+  # No `alias` key: the engine's --alias is pinned to MODEL_NAME in the
+  # ConfigMap (see templates/deployment.yaml) because llm-init's readiness gate
+  # matches on it. A free-form alias here would silently disable the API.
   ctxSize: "200000"
   threads: "16"

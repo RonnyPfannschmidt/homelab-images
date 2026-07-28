@@ -13,7 +13,14 @@ data:
   MMPROJ_FILE: "{{ .Values.model.mmproj.file }}"
   DRAFT_REPO: "{{ .Values.model.draft.repo }}"
   DRAFT_FILE: "{{ .Values.model.draft.file }}"
-  MODEL_ALIAS: "{{ .Values.model.alias }}"
+  # MUST equal llm-init's MODEL_NAME. llm-init polls the engine's /v1/models and
+  # only enables its OpenAI data plane once it finds a model advertised under
+  # MODEL_NAME; anything else leaves it answering 503 {"code":"not_ready",
+  # "message":"model not ready; data plane disabled"} forever, even though the
+  # engine is healthy. The stock llama.cpp template gets this for free by running
+  # `llama-server -hf "$MODEL_NAME"`; this chart loads local GGUF paths instead,
+  # so the alias has to be pinned to the same string by hand.
+  MODEL_ALIAS: "{{ .Values.model.target.repo }}:UD-Q3_K_XL"
   CTX_SIZE: "{{ .Values.model.ctxSize }}"
   THREADS: "{{ .Values.model.threads }}"
   LLAMACPP_PORT: "8081"
@@ -73,7 +80,7 @@ data:
             --mmproj "$MMPROJ_PATH" \
             --spec-type dflash \
             --spec-dflash-cross-ctx 1024 \
-            --alias "${MODEL_ALIAS:-qwen3.6-27b-beellama-vision}" \
+            --alias "${MODEL_ALIAS:-$MODEL_NAME}" \
             --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
             -ngl 99 --spec-draft-ngl 99 \
             --ctx-size "${CTX_SIZE:-200000}" \
@@ -330,6 +337,8 @@ spec:
 ---
 # Entrance service: OlaresManifest entrances[].host resolves this name — without
 # it the app never leaves `initializing` (entrance readiness probes this Service).
+# Doubles as the cross-namespace API endpoint for other apps, reachable as
+# http://llminit.qwen36beellamavision-shared:8090 thanks to options.shared.
 apiVersion: v1
 kind: Service
 metadata:
