@@ -26,3 +26,8 @@ model:
   # matches on it. A free-form alias here would silently disable the API.
   ctxSize: "200000"
   threads: "16"
+  # Unload model + KV cache from VRAM after this many idle seconds (llama.cpp
+  # --sleep-idle-seconds). /health, /props and /v1/models are bypass routes, so
+  # probes and llm-init polling do not reset the timer; the first completion
+  # request transparently reloads the model. -1 disables.
+  sleepIdleSeconds: "900"
