@@ -269,6 +269,16 @@ spec:
               value: Etc/UTC
             - name: CUDA_DEVICE_MEMORY_LIMIT_0
               value: "30000m"
+            # Persist the CUDA JIT cache (PTX->SASS) across pod restarts. The
+            # image has no native Blackwell (sm_120) cubins, so kernels are
+            # JIT-compiled on first use; without this the cache lives in the
+            # container's ~/.nv and every restart pays the compile cost on the
+            # first request. 4 GiB max because ggml fat binaries exceed the
+            # 1 GiB default and eviction would re-trigger JIT.
+            - name: CUDA_CACHE_PATH
+              value: /cuda-cache/nv-compute
+            - name: CUDA_CACHE_MAXSIZE
+              value: "4294967296"
             - name: WAIT_TIMEOUT
               value: "3600"
           ports:
@@ -317,6 +327,8 @@ spec:
             - mountPath: "/chat-template"
               name: chat-template
               readOnly: true
+            - mountPath: /cuda-cache
+              name: cuda-cache
       volumes:
         - name: hf-cache
           hostPath:
@@ -325,6 +337,10 @@ spec:
         - name: run-state
           hostPath:
             path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: cuda-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/cuda-cache/{{ .Release.Name }}
             type: DirectoryOrCreate
         - name: wrapper
           configMap:
