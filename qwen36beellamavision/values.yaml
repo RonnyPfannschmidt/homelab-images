@@ -29,5 +29,11 @@ model:
   # Unload model + KV cache from VRAM after this many idle seconds (llama.cpp
   # --sleep-idle-seconds). /health, /props and /v1/models are bypass routes, so
   # probes and llm-init polling do not reset the timer; the first completion
-  # request transparently reloads the model. -1 disables.
-  sleepIdleSeconds: "900"
+  # request transparently reloads the model. <=0 disables (the flag is then
+  # omitted entirely, see the wrapper in templates/deployment.yaml).
+  #
+  # DISABLED since v1.2.5: freeing ~19 GiB on sleep drives HAMi-core's
+  # per-container usage counter negative, and the next wake's cuMemGetInfo hits
+  # its `limit < usage` guard -> CUDA_ERROR_INVALID_VALUE -> ggml_abort ->
+  # container restart. Cost 4 restarts/day. See docs/olares-qwen36beellama.md.
+  sleepIdleSeconds: "-1"

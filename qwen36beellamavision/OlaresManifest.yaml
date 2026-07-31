@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.6 27B vision-capable — 106 t/s @ 200K via BeeLlama.cpp + mmproj F16 + DFlash + turbo3 KV"
   title: Qwen36 27B BeeLlama Vision One
-  version: 1.2.4
+  version: 1.2.5
   categories:
     - Vision
     - AI Agents
@@ -50,7 +50,7 @@ spec:
   # Required by lint whenever options.shared is true: a shared app serves every
   # user on the cluster, so only an admin may install it.
   onlyAdmin: true
-  versionName: 1.2.4
+  versionName: 1.2.5
   upgradeDescription: |
     v1.2.2: fix the OpenAI API never coming up. llm-init only enables its `/v1/*` data plane once it finds a model advertised under `MODEL_NAME` in the engine's `/v1/models`; this chart passed `--alias qwen3.6-27b-beellama-vision` while `MODEL_NAME` was `unsloth/Qwen3.6-27B-GGUF:UD-Q3_K_XL`, so the gate never matched and every API call got `503 {"code":"not_ready","message":"model not ready; data plane disabled"}` — with `engine_alive: true` and the engine serving normally on :8081 the whole time. `--alias` is now pinned to `MODEL_NAME` and the free-form `model.alias` value is gone. Pre-existing since the llm-init migration in v1.1.0; it was masked by the entrance's Authelia redirect, which failed earlier in the request path.
 
