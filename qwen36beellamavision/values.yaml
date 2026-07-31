@@ -35,5 +35,10 @@ model:
   # DISABLED since v1.2.5: freeing ~19 GiB on sleep drives HAMi-core's
   # per-container usage counter negative, and the next wake's cuMemGetInfo hits
   # its `limit < usage` guard -> CUDA_ERROR_INVALID_VALUE -> ggml_abort ->
-  # container restart. Cost 4 restarts/day. See docs/olares-qwen36beellama.md.
+  # container restart. Cost 4 restarts/day.
+  #
+  # Keep it disabled, but note this is only a partial mitigation: on 2026-07-31
+  # the engine aborted mid-inference with the same underflow (counter at
+  # -127960 B) while sleep was already off, so other alloc/free churn drifts the
+  # counter too. See docs/olares-qwen36beellama.md.
   sleepIdleSeconds: "-1"

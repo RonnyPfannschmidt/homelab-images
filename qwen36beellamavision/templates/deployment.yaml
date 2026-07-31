@@ -70,6 +70,8 @@ data:
         # unload corrupts HAMI-core's usage accounting and the next wake aborts
         # the process in cuMemGetInfo. Omit the flag entirely when disabled
         # rather than relying on llama-server accepting a negative value.
+        # Off is necessary but not sufficient — the counter also drifts without
+        # any sleep cycle (docs/olares-qwen36beellama.md).
         SLEEP_ARG=""
         if [ "${SLEEP_IDLE_SECONDS:-0}" -gt 0 ] 2>/dev/null; then
             SLEEP_ARG="--sleep-idle-seconds $SLEEP_IDLE_SECONDS"
@@ -86,6 +88,11 @@ data:
         log "mmproj=$MMPROJ_PATH"
         log "draft=$DRAFT_PATH"
 
+        # -fit off: with CUDA_DEVICE_MEMORY_LIMIT*=0 HAMi-core's cuMemGetInfo
+        # hook reports `free - usage`, which is garbage whenever its counter has
+        # drifted negative. Nothing here needs auto-fitting anyway -- -ngl,
+        # --ctx-size and both batch sizes are pinned below -- so stop the engine
+        # querying device memory at all.
         cd /app
         exec ./llama-server \
             --model "$TARGET_PATH" \
@@ -105,6 +112,7 @@ data:
             --chat-template-file /chat-template/qwen36_chat_template.jinja \
             --no-mmap --mlock \
             --metrics \
+            -fit off \
             $SLEEP_ARG \
             --temp 0.6 --top-k 20 --min-p 0.0
 ---
@@ -279,8 +287,33 @@ spec:
               value: "1000"
             - name: TZ
               value: Etc/UTC
+            # Both are "0" = unlimited, and that is deliberate (v1.2.6): it is
+            # the only setting that disarms HAMi-core's false-OOM abort without
+            # unloading libvgpu.so.
+            #
+            # HAMi-core's per-container usage counter is unsigned and drifts
+            # negative under this workload's alloc/free churn; once it does, it
+            # reads as ~1.8e19 and beats *any* positive limit, so the old
+            # 30000m "safety belt" could never help (see
+            # docs/olares-qwen36beellama.md). Both guard sites short-circuit on
+            # a zero limit before they can misfire:
+            #   allocator.c oom_check      -> `if (limit == 0) return 0;`
+            #   memory.c   cuMemGetInfo_v2 -> `if (limit == 0)` falls through to
+            #                                 the real driver, ahead of the
+            #                                 `limit < usage` branch that
+            #                                 returned CUDA_ERROR_INVALID_VALUE.
+            #
+            # Do NOT "fix" this back to 23552m: a real limit re-arms both
+            # aborts. The cap was fiction anyway (30000 MiB on a 23.89 GiB
+            # card), and the HAMi scheduler still reserves nvidia.com/gpumem.
+            #
+            # The non-indexed var is set too because it is the fallback in
+            # HAMi-core's do_init_device_memory_limits() and the device plugin
+            # may inject it from the gpumem request.
+            - name: CUDA_DEVICE_MEMORY_LIMIT
+              value: "0"
             - name: CUDA_DEVICE_MEMORY_LIMIT_0
-              value: "30000m"
+              value: "0"
             # Persist the CUDA JIT cache (PTX->SASS) across pod restarts. The
             # image has no native Blackwell (sm_120) cubins, so kernels are
             # JIT-compiled on first use; without this the cache lives in the

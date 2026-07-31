@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.6 27B vision-capable — 106 t/s @ 200K via BeeLlama.cpp + mmproj F16 + DFlash + turbo3 KV"
   title: Qwen36 27B BeeLlama Vision One
-  version: 1.2.5
+  version: 1.2.6
   categories:
     - Vision
     - AI Agents
@@ -50,8 +50,24 @@ spec:
   # Required by lint whenever options.shared is true: a shared app serves every
   # user on the cluster, so only an admin may install it.
   onlyAdmin: true
-  versionName: 1.2.5
+  versionName: 1.2.6
   upgradeDescription: |
+    v1.2.6: stop HAMi-core's broken memory accounting from killing the engine — and retract what v1.2.5 claimed about it.
+
+    v1.2.5 concluded that "every abort is on wake from sleep, never during inference", and disabled the idle VRAM unload on that basis. The conclusion was wrong. With v1.2.5 deployed and idle unload confirmed off, the engine still aborted after 90 minutes of ordinary use — mid-decode, stack `llama_decode -> process_ubatch -> graph_compute -> ggml_cuda_op_mul_mat_cublas`, with unbroken 47-50 ms spec-decode cycles right up to the abort. Disabling `--sleep-idle-seconds` removed one *trigger*, not the bug. (v1.2.3 added that unload, v1.2.4 persisted the CUDA JIT cache, v1.2.5 disabled the unload again; none of the three got a note here.)
+
+    The bug is HAMi-core's per-container usage counter: it is unsigned and drifts negative under this workload's alloc/free churn. Once negative it reads as ~1.8e19, so it fails every check it feeds. Two crash sites, one cause:
+      - `allocator.c` OOM check -> `Device 0 OOM 18446744073709423656 / 31457280000` -> ggml_abort (observed 2026-07-31 with the counter at -127960 bytes; this is the one v1.2.6 addresses)
+      - `memory.c` cuMemGetInfo `limit < usage` guard -> CUDA_ERROR_INVALID_VALUE -> ggml_abort (the wake-from-sleep crash v1.2.5 chased)
+
+    Fix: `CUDA_DEVICE_MEMORY_LIMIT_0` and `CUDA_DEVICE_MEMORY_LIMIT` are both set to `0`. HAMi-core short-circuits *both* guards on a zero limit before either can misfire — `if (limit == 0) return 0;` in the OOM check, and a fall-through to the real driver ahead of the `limit < usage` branch in cuMemGetInfo. This keeps `libvgpu.so` loaded, so Olares' GPU arbitration with other GPU apps (the `olares_client.c` lock against `beclab/gpu-scheduler`) is unaffected — unlike `CUDA_DISABLE_CONTROL=true`, which would unload it entirely and take that arbitration with it.
+
+    What is given up: nothing real. The old `30000m` was fiction on a 23.89 GiB card, and a *correct* limit would not have helped either — no positive limit survives comparison against an underflowed counter. That also voids the v1.0.1/v1.0.2 rationale for bumping 24300m -> 30000m as a "safety belt". The HAMi scheduler still reserves `nvidia.com/gpumem: 23552`.
+
+    Also adds `-fit off`. On the zero-limit path cuMemGetInfo still reports `free - usage`, which is garbage while the counter is drifted; the chart pins `-ngl`, `--ctx-size` and both batch sizes, so auto-fitting bought nothing and now never runs. Side effect worth checking on first boot: startup should report the card's real ~24564 MiB instead of the phantom `Total VRAM: 30000 MiB`.
+
+    Not fixed here: the counter still drifts, this only makes the drift harmless. Two sleep-independent churn sources are documented — Olares' own `Releasing the lock early due to inactivity` cycle (15 release/re-acquire rounds in 90 minutes, from beclab's `olares_client.c` fork of HAMi-core) and llama.cpp's prompt-cache checkpointing (32 cache updates, 15 checkpoint restores in the same window). Upstream is no help yet: this box already runs `beclab/hami:v2.6.23`, HAMi-core PR#103 ("Fix v2.6.0") never claimed an underflow fix, and HAMi-core#60 — the same "abnormally large usage" signature — is closed with no linked fix.
+
     v1.2.2: fix the OpenAI API never coming up. llm-init only enables its `/v1/*` data plane once it finds a model advertised under `MODEL_NAME` in the engine's `/v1/models`; this chart passed `--alias qwen3.6-27b-beellama-vision` while `MODEL_NAME` was `unsloth/Qwen3.6-27B-GGUF:UD-Q3_K_XL`, so the gate never matched and every API call got `503 {"code":"not_ready","message":"model not ready; data plane disabled"}` — with `engine_alive: true` and the engine serving normally on :8081 the whole time. `--alias` is now pinned to `MODEL_NAME` and the free-form `model.alias` value is gone. Pre-existing since the llm-init migration in v1.1.0; it was masked by the entrance's Authelia redirect, which failed earlier in the request path.
 
     v1.2.1: drop the `sharedEntrances` block and `sharedentrances-api` Service added in v1.2.0 — app-service ignores them (the install event logs `SharedEntrances: nil`); shared apps are consumed over in-cluster Service DNS, not over a URL. Restores the entrance name to the appid, so its URL goes back to what it was before v1.2.0.
