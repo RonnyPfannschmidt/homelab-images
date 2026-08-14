@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: '1.0.0'
+description: Qwen3.8 27B vision-capable via BeeLlama.cpp v0.4.3 — UD-Q4_K_XL target, MTP speculative decoding, kvarn3 KV @ 64K (quality-over-context sibling of qwen38beellamavision)
+name: qwen38beellamaq4kxl
+type: application
+version: '1.0.0'

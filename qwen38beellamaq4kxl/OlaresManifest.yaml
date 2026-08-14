@@ -1,0 +1,164 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  llminit: 1
+  qwen38beellamaq4kxl: 1
+metadata:
+  name: qwen38beellamaq4kxl
+  # Reuses the qwen3.6 app's icon asset on aamsellem's external host — no
+  # Qwen3.8 asset exists there, and this chart does not publish icons.
+  icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+  description: "Qwen3.8 27B vision-capable at UD-Q4_K_XL — MTP speculative decoding via BeeLlama.cpp v0.4.3 + mmproj F16 + kvarn3 KV @ 64K"
+  title: Qwen38 27B BeeLlama Q4_K_XL
+  version: 1.0.0
+  categories:
+    - Vision
+    - AI Agents
+  bento:
+    family: qwen
+    size_label: "27B"
+    badge: vision
+    hero:
+      # NOT a t/s figure: nothing has been benchmarked for this quant on this
+      # box. The Q3 sibling's measured "64 t/s" is its own number and must not
+      # be copied here — a 4.5 GB larger target reads more weight per token, so
+      # this will be slower, by an amount nobody has measured yet. Replace with
+      # a measured number after the first bench on a free card.
+      value: "Q4_K_XL"
+      label: "quality + vision"
+    specs:
+      - { label: "context", value: "64K" }
+      - { label: "vram", value: "23 GB" }
+    capabilities:
+      tool_calling: true
+      vision:       true
+      audio:        false
+      # No `accept` figure: the Q3 sibling measured 51% on prose with a Q8_0 MTP
+      # head, and this chart runs the coarser Q4_0 head, so that number does not
+      # transfer. Add one once measured.
+      mtp:          { enabled: true }
+    stack: "BeeLlama · MTP · kvarn3 · mmproj F16"
+# The only entrance: llm-init's download-progress dashboard, opened from the
+# Olares desktop with a browser session. `authLevel: internal` means it 302s to
+# Authelia for any request without a session, so it is NOT an API surface —
+# other apps reach the model over in-cluster Service DNS instead
+# (http://llminit.qwen38beellamaq4kxl-shared:8090/v1), which is what
+# options.shared below enables. Confirmed on the Q3 sibling: pointing Open WebUI
+# at the entrance URL gets a 302 to the Authelia login page, never JSON.
+entrances:
+  - name: qwen38beellamaq4kxl
+    port: 8090
+    host: llminit
+    title: Qwen38 27B BeeLlama Q4_K_XL
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    openMethod: window
+    authLevel: internal
+spec:
+  # Required by lint whenever options.shared is true: a shared app serves every
+  # user on the cluster, so only an admin may install it.
+  onlyAdmin: true
+  versionName: 1.0.0
+  upgradeDescription: |
+    v1.0.0: initial release — the quality-over-context sibling of `qwen38beellamavision`.
+
+    Same model, same engine image, same MTP speculative decoding, same vision projector. The only deliberate differences are the quant and what it costs:
+
+    | | qwen38beellamavision | this chart |
+    |---|---|---|
+    | target | UD-Q3_K_XL (13.44 GB) | **UD-Q4_K_XL (17.92 GB)** |
+    | MTP head | Q8_0 (3.16 GB) | **Q4_0 (1.68 GB)** |
+    | context | 160K | **64K** |
+
+    4.5 GB of extra weight fidelity comes straight out of the VRAM budget, and there is nowhere else for it to come from — the card reserves 23552 MiB and the weights alone reach 19.12 GiB. The MTP head drops to Q4_0 because that 1.5 GB is the difference between a usable context and a toy one; a coarser draft costs accept rate only, never correctness, since every drafted token is still verified by the target.
+
+    Both apps can be installed at once and both register distinct model ids (the quant is part of MODEL_NAME), but **they cannot run at once** — each reserves the whole 23552 MiB GPU budget. Running two GPU apps on this card in TimeSlice mode was measured on the Q3 sibling at 3.97 t/s against 63.7 t/s on a free card, so treat these as alternatives, not a pair.
+
+    Not benchmarked. A larger target reads more weight per token, so expect this to be slower than the Q3 sibling's measured 63.7-64.5 t/s by an amount nobody has measured yet, with a lower MTP accept rate from the coarser head. Measure on a free card before believing any number — check `settings compute list` (the APPS column) and `nvidia-smi` first.
+
+    Everything else is carried over unchanged and documented in docs/olares-qwen38beellama.md: the MTP-not-DFlash rationale, the move to upstream `ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.4.3` (MTP serving needs BeeLlama >= v0.3.0), kvarn3 replacing the removed turbo3, the `draft-mtp` spec-type spelling, the pinned Qwen3.8 chat template, the HAMi zero-memory-limit workaround, `-fit off`, the disabled idle VRAM unload, and the wrapper that waits for llm-init rather than crashlooping through the download.
+  fullDescription: |
+    Qwen3.8 27B vision-capable via BeeLlama.cpp on Olares One at UD-Q4_K_XL, with
+    Multi-Token-Prediction speculative decoding. RTX 5090M (24 GB GDDR7, sm_120
+    Blackwell consumer mobile) + 96 GB DDR5 + Core Ultra 9 275HX.
+
+    Stack:
+      - Image: ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.4.3 (upstream BeeLlama, CUDA 13)
+      - Target: unsloth/Qwen3.8-27B-GGUF UD-Q4_K_XL (17.92 GB, MTP-free as required)
+      - Vision projector: unsloth mmproj-F16.gguf (0.93 GB)
+      - MTP draft head: ggml-org/Qwen3.8-27B-GGUF mtp-Qwen3.8-27B-Q4_0.gguf (1.68 GB)
+      - KV cache: kvarn3 (3-bit, the successor to the removed turbo3)
+      - Spec: --spec-type draft-mtp --spec-draft-n-max 3
+      - Context: 64K (native 262K; limited here by the larger target's VRAM)
+
+    Choose this over qwen38beellamavision when output quality matters more than
+    context length. Choose the other one for long-context work: it runs the same
+    model at UD-Q3_K_XL and reaches 160K. They cannot run simultaneously — each
+    reserves the whole GPU budget.
+
+    Not benchmarked yet. Expect it to be slower than the Q3 sibling's measured
+    63.7-64.5 t/s, with a lower MTP accept rate from the coarser Q4_0 draft head.
+
+    Apache 2.0 license. Thinking mode with reasoning_effort, tool calling
+    (verified working on the Q3 sibling — Qwen3.8's XML function form parses to
+    structured tool_calls), and image input via the OpenAI image_url content
+    type. First launch downloads ~19.6 GB, of which the 0.93 GB mmproj is
+    already in the shared cache if the Q3 sibling was installed.
+
+    Consumers must connect over in-cluster Service DNS
+    (http://llminit.qwen38beellamaq4kxl-shared:8090/v1), not the entrance URL:
+    the entrance is authLevel internal and 302s any session-less request to
+    Authelia.
+
+  developer: ronnypfannschmidt
+  website: https://github.com/Anbeeld/beellama.cpp
+  sourceCode: https://github.com/Anbeeld/beellama.cpp
+  submitter: ronnypfannschmidt
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/ggml-org/llama.cpp/blob/master/LICENSE
+
+  accelerator:
+    - mode: nvidia
+      requiredCpu: "4"
+      limitedCpu: "16"
+      requiredMemory: 22Gi
+      limitedMemory: 40Gi
+      requiredDisk: 25Gi
+      limitedDisk: 40Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+
+  supportArch:
+    - amd64
+permission:
+  appData: true
+  # The chart reads and writes the shared HuggingFace cache under
+  # /olares/rootfs/Common/huggingface.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `qwen38beellamaq4kxl-shared` instead of the per-user namespace
+  # and force-enables cross-namespace access (mesh sidecar + NetworkPolicy), so
+  # other apps can reach the engine at
+  # http://llminit.qwen38beellamaq4kxl-shared:8090/v1. Also makes the install
+  # admin-only, hence spec.onlyAdmin above.
+  shared: true
+  # Marks the app as an LLM provider for gateway-aware consumers. No gateway is
+  # installed on this box today, so this is currently inert — kept because every
+  # v3 LLM app in beclab/apps sets it.
+  LLMGatewaySupported: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN
