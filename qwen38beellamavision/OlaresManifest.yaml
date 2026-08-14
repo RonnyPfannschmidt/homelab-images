@@ -1,0 +1,156 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  llminit: 1
+  qwen38beellamavision: 1
+metadata:
+  name: qwen38beellamavision
+  # Reuses the qwen3.6 app's icon asset on aamsellem's external host — no
+  # Qwen3.8 asset exists there, and this chart does not publish icons.
+  icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+  description: "Qwen3.8 27B vision-capable — MTP speculative decoding via BeeLlama.cpp v0.4.3 + mmproj F16 + kvarn3 KV @ 160K"
+  title: Qwen38 27B BeeLlama Vision One
+  version: 1.0.1
+  categories:
+    - Vision
+    - AI Agents
+  bento:
+    family: qwen
+    size_label: "27B"
+    badge: vision
+    hero:
+      # Deliberately not a t/s figure: nothing has been benchmarked on this box
+      # yet. The qwen3.6 app's "106 t/s" was measured; this is not, and must not
+      # be copied over. Replace with a measured number after the first bench.
+      value: "MTP"
+      label: "speed + vision"
+    specs:
+      - { label: "context", value: "160K" }
+      - { label: "vram", value: "23 GB" }
+    capabilities:
+      tool_calling: true
+      vision:       true
+      audio:        false
+      mtp:          { enabled: true, accept: 57 }
+    stack: "BeeLlama · MTP · kvarn3 · mmproj F16"
+# The only entrance: llm-init's download-progress dashboard, opened from the
+# Olares desktop with a browser session. `authLevel: internal` means it 302s to
+# Authelia for any request without a session, so it is NOT an API surface —
+# other apps reach the model over in-cluster Service DNS instead
+# (http://llminit.qwen38beellamavision-shared:8090/v1), which is what
+# options.shared below enables.
+entrances:
+  - name: qwen38beellamavision
+    port: 8090
+    host: llminit
+    title: Qwen38 27B BeeLlama Vision
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    openMethod: window
+    authLevel: internal
+spec:
+  # Required by lint whenever options.shared is true: a shared app serves every
+  # user on the cluster, so only an admin may install it.
+  onlyAdmin: true
+  versionName: 1.0.1
+  upgradeDescription: |
+    v1.0.1: make the first-boot wait visible and non-crashing. Two wrapper bugs, both surfaced by the v1.0.0 install on Olares One.
+
+    The engine container is scheduled immediately while llm-init is still pulling ~17.5 GB into the shared cache, so its GGUFs are simply not there yet. v1.0.0 exited on the first missing file, which meant the pod sat in CrashLoopBackOff for the entire download — self-healing, but indistinguishable from a real failure. `find_cached_file` now polls until the file's snapshot symlink resolves, bounded by the `WAIT_TIMEOUT` (3600s) that the chart already set and never read; the startupProbe's own 720 x 30s budget sits well above it.
+
+    Worse, the crash was unreadable: `log()` wrote to stdout, and `find_cached_file` is called as `$(...)`, so its "could not locate ..." message was captured into the caller's variable instead of reaching the container log. A missing model produced exactly one line — `idle VRAM unload disabled` — and then a bare exit. `log()` now writes to stderr. Both bugs are inherited from the qwen3.6 chart, where they were never hit because its models were already cached.
+
+    v1.0.0: initial release — Qwen3.8 27B vision, served with MTP speculative decoding instead of DFlash.
+
+    This is the qwen3.6 `qwen36beellamavision` chart re-pointed at Qwen3.8-27B, with three forced changes. None of them is a preference; each is something that does not exist for Qwen3.8.
+
+    1. **No DFlash drafter, MTP instead.** spiritbuun publishes DFlash GGUFs for Qwen3.5-27B and Qwen3.6-27B only, and a DFlash drafter is trained against one specific target — the 3.6 drafter is not a drop-in for a 3.8 target even though both GGUFs report the same `qwen35` architecture. Qwen3.8 instead carries Multi-Token-Prediction weights in the upstream checkpoint (`mtp_num_hidden_layers`), which llama-server can use as a draft model — but only when they are extracted to a standalone GGUF via `convert_hf_to_gguf.py --mtp`. Most GGUF repos do not do that; `ggml-org/Qwen3.8-27B-GGUF` does, so the MTP head comes from there while the target and mmproj come from unsloth. The target must be MTP-free, which unsloth's quants are (that repo ships no MTP tensors at all).
+
+    2. **A different engine image.** MTP serving landed in BeeLlama v0.3.0. The qwen3.6 chart pins `aamsellem/beellama-cpp:0.1.3-rc1`, and the newest tag on that Docker Hub repo is `0.2.0` — so no aamsellem image can run this app. This chart uses upstream `ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.4.3`, built from the stock CUDA Dockerfile, which compiles every supported architecture including the box's sm_120 Blackwell.
+
+    3. **kvarn3 KV, not turbo3.** BeeLlama v0.4.0 removed the TurboQuant/TCQ cache formats entirely; `turbo3` now only warns and redirects by width. `kvarn3` is the 3-bit successor and is requested directly. The `--spec-type` values were renamed in the same line, so the wrapper passes `draft-mtp`, not `mtp`.
+
+    Context is 160K, below the qwen3.6 app's 200K and this model's native 262K, because the MTP head costs VRAM the DFlash drafter did not: 13.44 GB target + 0.93 GB mmproj + 3.16 GB MTP head = 17.5 GB of weights against a 23552 MiB reservation. To buy context back, swap the head to ggml-org's `mtp-Qwen3.8-27B-Q4_0.gguf` (1.68 GB) — a coarser draft costs accept rate, never correctness.
+
+    Sampling follows the Qwen3.8 model card's thinking-mode defaults (temp 1.0, top_p 0.95, top_k 20, min_p 0.0), which differ from the qwen3.6 chart's temp 0.6.
+
+    Carried over unchanged from qwen3.6 v1.2.6, because they are properties of this box rather than of any model: `CUDA_DEVICE_MEMORY_LIMIT`/`_0` pinned to `0` to disarm HAMi-core's false-OOM abort without unloading `libvgpu.so`, `-fit off`, the disabled idle VRAM unload (`--sleep-idle-seconds` omitted), and the persisted CUDA JIT cache.
+
+    Not benchmarked on this box yet. The only published Qwen3.8 MTP measurements (Q8_0 target, 97K context, single session) report a 57.3% overall draft accept rate and a 1.6x-2.7x speedup depending on text kind — expect a different figure here on a Q3_K_XL target at 160K.
+
+    Known limitation: Qwen3.8 emits tool calls in a new XML form (`<tool_call><function=name><parameter=x>`) rather than 3.6's JSON-in-`<tool_call>`. Whether this engine build's `--jinja` tool-call parser recognises that form is unverified; if it does not, tool calls come back as assistant text instead of structured `tool_calls`. Chat and vision are unaffected.
+  fullDescription: |
+    Qwen3.8 27B vision-capable via BeeLlama.cpp on Olares One, with Multi-Token-Prediction
+    speculative decoding. RTX 5090M (24 GB GDDR7, sm_120 Blackwell consumer mobile) +
+    96 GB DDR5 + Core Ultra 9 275HX.
+
+    Stack:
+      - Image: ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.4.3 (upstream BeeLlama, CUDA 13)
+      - Target: unsloth/Qwen3.8-27B-GGUF UD-Q3_K_XL (13.44 GB, MTP-free as required)
+      - Vision projector: unsloth mmproj-F16.gguf (0.93 GB)
+      - MTP draft head: ggml-org/Qwen3.8-27B-GGUF mtp-Qwen3.8-27B-Q8_0.gguf (3.16 GB)
+      - KV cache: kvarn3 (3-bit, the successor to the removed turbo3)
+      - Spec: --spec-type draft-mtp --spec-draft-n-max 3
+      - Context: 160K (native 262K; limited here by the MTP head's VRAM)
+
+    Not yet benchmarked on this box. Published Qwen3.8 MTP measurements elsewhere
+    (Q8_0 target, 97K, single session) show 57.3% draft accept and 1.6x-2.7x speedup.
+
+    Why MTP and not DFlash: no DFlash drafter has been published for Qwen3.8, and a
+    DFlash drafter is target-specific, so the Qwen3.6 one cannot be reused.
+
+    Apache 2.0 license. Thinking mode with reasoning_effort, tool calling, and image
+    input via the OpenAI image_url content type. First launch downloads ~17.5 GB.
+
+  developer: ronnypfannschmidt
+  website: https://github.com/Anbeeld/beellama.cpp
+  sourceCode: https://github.com/Anbeeld/beellama.cpp
+  submitter: ronnypfannschmidt
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/ggml-org/llama.cpp/blob/master/LICENSE
+
+  accelerator:
+    - mode: nvidia
+      requiredCpu: "4"
+      limitedCpu: "16"
+      requiredMemory: 22Gi
+      limitedMemory: 40Gi
+      requiredDisk: 25Gi
+      limitedDisk: 40Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+
+  supportArch:
+    - amd64
+permission:
+  appData: true
+  # The chart reads and writes the shared HuggingFace cache under
+  # /olares/rootfs/Common/huggingface.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `qwen38beellamavision-shared` instead of the per-user namespace
+  # and force-enables cross-namespace access (mesh sidecar + NetworkPolicy), so
+  # other apps can reach the engine at
+  # http://llminit.qwen38beellamavision-shared:8090/v1. Also makes the install
+  # admin-only, hence spec.onlyAdmin above.
+  shared: true
+  # Marks the app as an LLM provider for gateway-aware consumers. No gateway is
+  # installed on this box today, so this is currently inert — kept because every
+  # v3 LLM app in beclab/apps sets it.
+  LLMGatewaySupported: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN
