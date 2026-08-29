@@ -1,0 +1,45 @@
+workloads:
+  fichtendorf:
+    replicaCount: 1
+  terminal:
+    replicaCount: 1
+
+# Injected by Olares at install time; the empty defaults only exist so `helm
+# template` works outside a cluster.
+userspace:
+  appData: ""
+
+# Update the Via trio (ViaFabric, ViaVersion, ViaBackwards) together, never one
+# of them alone. ViaFabric links ViaVersion's internals directly, so a mismatched
+# pair dies in ViaFabric's entrypoint with a NoClassDefFoundError before the
+# server opens a port — it presents as "the app never becomes ready" rather than
+# as a mod error, which is a slow thing to diagnose. This bit once, on 0.1.2.
+# The Minecraft and Fabric loader versions are deliberately NOT here — they are
+# literals in templates/deployment.yaml. `market upgrade` carries the
+# install-time .Values forward and only re-renders the templates, so a version
+# bumped here would stay at whatever the app was first installed with while the
+# pack in the same chart moved on. That combination boots a new pack against an
+# old server and Fabric rejects every mod at once. Measured, on 0.2.0.
+server:
+  # 4G is the floor for this pack: Fabric API + Geyser + Floodgate + the three
+  # Via* mods each hold their own mappings, and Via in particular grows with the
+  # number of protocol versions it bridges.
+  memory: "4G"
+  motd: "Ronny und Janosch - FichtenDorf"
+  levelName: "FichtenDorf"
+  seed: "25400"
+  difficulty: "easy"
+  mode: "survival"
+  maxPlayers: "10"
+  viewDistance: "10"
+  simulationDistance: "10"
+
+geyser:
+  # The Bedrock listener. 19132/udp is the port every Bedrock client (console,
+  # phone, Windows) probes by default and the only one the LAN "Friends" tab
+  # ever finds, so it is deliberately not made configurable per-environment.
+  bedrockPort: 19132
+
+# Port the in-pod HTTP server hands the pack to itzg's packwiz installer on.
+# Loopback only — it is not in the Service and not in the manifest's ports[].
+packServerPort: 8080

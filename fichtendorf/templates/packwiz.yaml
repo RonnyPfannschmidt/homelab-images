@@ -1,0 +1,57 @@
+---
+# The packwiz pack, verbatim from files/packwiz/, rendered into a ConfigMap.
+#
+# This is the *only* copy of the pack in the repository: `packwiz-docker run ...`
+# edits these files in place, and the chart ships whatever they say. Nothing
+# regenerates them at install time, so the sha256 hashes inside index.toml and
+# pack.toml must survive the trip through YAML untouched — hence the `|` block
+# scalars and the requirement that every file end in exactly one newline (which
+# `packwiz refresh` produces).
+#
+# ConfigMap keys cannot contain `/`, so the directory separator is flattened to
+# `_` here and restored by the volume's `items[].path` in deployment.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: packwiz-pack
+  namespace: {{ .Release.Namespace }}
+data:
+{{- range $path, $_ := .Files.Glob "files/packwiz/**" }}
+  {{ $path | trimPrefix "files/packwiz/" | replace "/" "_" }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+---
+# Seed configuration for Geyser, copied into place by the init container only
+# when the server has never generated one.
+#
+# Exactly two settings matter and neither has a usable default:
+#
+#   remote.auth-type: floodgate  — Geyser defaults to `online`, which makes every
+#     Bedrock player fail Mojang authentication against an online-mode Java
+#     server. Installing the Floodgate mod does NOT flip this; Geyser only reads
+#     Floodgate's key once it has been told to. Without it Bedrock connects and
+#     is immediately disconnected, which reads like a network problem and is not.
+#
+#   bedrock.address: 0.0.0.0 — the pod needs to accept from outside its own
+#     network namespace.
+#
+# Everything else is deliberately absent: Geyser merges its own defaults for any
+# key the file omits and rewrites the file on first load, so a short seed cannot
+# go stale against a future config schema the way a full copy would.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geyser-seed-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.yml: |
+    bedrock:
+      address: 0.0.0.0
+      port: {{ .Values.geyser.bedrockPort }}
+    remote:
+      auth-type: floodgate
+    # Geyser compares this against its own schema version and logs "Your Geyser
+    # config is out of date!" when it is absent. It reads the file either way,
+    # but an unversioned seed makes a real schema bump indistinguishable from
+    # our own omission.
+    config-version: 4
