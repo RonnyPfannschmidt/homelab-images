@@ -1,0 +1,46 @@
+hash-format = "sha256"
+
+[[files]]
+file = "datapacks/modern-multitools.pw.toml"
+hash = "72a1ad19abaddb7d2e98c256f726c1a6e49eed3fbf229197407d584ac7d2fb8f"
+metafile = true
+
+[[files]]
+file = "datapacks/waystones-data-pack.pw.toml"
+hash = "51b4cdd61874f8c8b132c9e246b0b361d7082b68532d0caa5ec90023ad0ca48c"
+metafile = true
+
+[[files]]
+file = "mods/datapack-injector.pw.toml"
+hash = "2f5fef8f6e54a4bb678e8fd2952a03d64e736cff426502fb77ffd8173505e7a5"
+metafile = true
+
+[[files]]
+file = "mods/fabric-api.pw.toml"
+hash = "59acfaf613f3df57ed4934a25e991e7f74751c19494be2e53d5eb86f6c659ced"
+metafile = true
+
+[[files]]
+file = "mods/floodgate.pw.toml"
+hash = "c3255c9bef50d1859b7715518d633585159deb57f78f19bb4fc97800415803ef"
+metafile = true
+
+[[files]]
+file = "mods/geyser.pw.toml"
+hash = "8e6e84ae4a37e8f5f06ba4f7dc3340319c592749bb07dc67d4243333835c02a5"
+metafile = true
+
+[[files]]
+file = "mods/viabackwards.pw.toml"
+hash = "86f84f2d39defd7756321fa0e5ccca29f197ff418a1ff4ade0914d9c3f600b6e"
+metafile = true
+
+[[files]]
+file = "mods/viafabric.pw.toml"
+hash = "309c5fa53b33422aedf5a06250745d6757eb12edc0a5ee1323525ead0a840dcb"
+metafile = true
+
+[[files]]
+file = "mods/viaversion.pw.toml"
+hash = "28d68f640ef3836ade5324e429c7ae082b1f385022ad23291705a9e4d1e34cb5"
+metafile = true

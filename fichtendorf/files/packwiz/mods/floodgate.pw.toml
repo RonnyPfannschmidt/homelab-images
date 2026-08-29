@@ -1,0 +1,13 @@
+name = "Floodgate"
+filename = "Floodgate-Fabric-2.2.5-b45.jar"
+side = "server"
+
+[download]
+url = "https://cdn.modrinth.com/data/bWrNNfkb/versions/ps3IuRel/Floodgate-Fabric-2.2.5-b45.jar"
+hash-format = "sha512"
+hash = "eebd599f805cb0b090c5a917e0618509cc9e41161581e0f2240596e3d6c841e66ad6b37bc8140a651ca15eef37db52489c1431e022f7efafd13523b64ec92045"
+
+[update]
+[update.modrinth]
+mod-id = "bWrNNfkb"
+version = "ps3IuRel"
