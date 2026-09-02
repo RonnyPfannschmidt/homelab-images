@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8 27B vision-capable — MTP speculative decoding via BeeLlama.cpp v0.4.3 + mmproj F16 + kvarn3 KV @ 160K"
   title: Qwen38 27B BeeLlama Vision One
-  version: 1.0.1
+  version: 1.0.2
   categories:
     - Vision
     - AI Agents
@@ -53,8 +53,20 @@ spec:
   # Required by lint whenever options.shared is true: a shared app serves every
   # user on the cluster, so only an admin may install it.
   onlyAdmin: true
-  versionName: 1.0.1
+  versionName: 1.0.2
   upgradeDescription: |
+    v1.0.2: carries over the OOMKill fix measured on the `qwen38beellamaq4kxl` sibling. Not observed here — this app was not installed while the sibling took three `exit 137` restarts on 2026-09-02 — but the cause is a property of the shared wrapper and the shared 30Gi limit, so it applies unchanged.
+
+    None of it was VRAM or the node; it was the container's memory cgroup. The engine's own footprint was never the problem: at each kill `llama-server` held only ~10.9 GB RSS against a 30Gi limit. The other ~19 GiB was page cache, left behind by reading the weights off the shared HF cache with `--no-mmap`. It is reclaimable, which is why the app ran for 18 days first — but an allocation that cannot wait for reclaim OOMs instead, and the first kill came from exactly that: the nvidia UVM bottom half allocating `GFP_NOMEMALLOC`, followed by an `Xid 31` MMU fault.
+
+    Three changes:
+
+    - **Container limit 30Gi -> 40Gi.** This app's own `limitedMemory` already declared 40Gi; only the deployment was out of step. The node has 93 GB.
+    - **`--cache-ram 2048`.** llama.cpp's host-side prompt cache for restorable prefixes defaults to **8192 MiB** and grows into all of it — all three kills landed at 7.7-8.7 GB anon-rss. Now bounded, and exposed as `model.cacheRamMiB`.
+    - **`--mlock` removed.** It could never work under the container's `RLIMIT_MEMLOCK`; every boot logged `failed to mlock <N>-byte buffer` and pinned nothing. `--no-mmap` already keeps the weights resident.
+
+    No model, quant, context, engine image or sampling change. Full analysis in docs/olares-qwen38beellama.md.
+
     v1.0.1: make the first-boot wait visible and non-crashing. Two wrapper bugs, both surfaced by the v1.0.0 install on Olares One.
 
     The engine container is scheduled immediately while llm-init is still pulling ~17.5 GB into the shared cache, so its GGUFs are simply not there yet. v1.0.0 exited on the first missing file, which meant the pod sat in CrashLoopBackOff for the entire download — self-healing, but indistinguishable from a real failure. `find_cached_file` now polls until the file's snapshot symlink resolves, bounded by the `WAIT_TIMEOUT` (3600s) that the chart already set and never read; the startupProbe's own 720 x 30s budget sits well above it.
@@ -118,7 +130,12 @@ spec:
       requiredCpu: "4"
       limitedCpu: "16"
       requiredMemory: 22Gi
-      limitedMemory: 40Gi
+      # SUM ACROSS CONTAINERS, not the engine's own limit — the market's chart
+      # validator rejects the package outright with "sum of container
+      # resources.limits.memory (NNGi) must be <= limitedMemory". Here that is
+      # llm-init's 2Gi plus the engine's 40Gi, so this has to be at least 42Gi.
+      # 44Gi leaves room to nudge the engine limit without another rejection.
+      limitedMemory: 44Gi
       requiredDisk: 25Gi
       limitedDisk: 40Gi
       requiredGPUMemory: 1Gi

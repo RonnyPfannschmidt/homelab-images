@@ -25,6 +25,7 @@ data:
   CTX_SIZE: "{{ .Values.model.ctxSize }}"
   THREADS: "{{ .Values.model.threads }}"
   CACHE_TYPE: "{{ .Values.model.cacheType }}"
+  CACHE_RAM_MIB: "{{ .Values.model.cacheRamMiB }}"
   SLEEP_IDLE_SECONDS: "{{ .Values.model.sleepIdleSeconds }}"
   SAMPLING_TEMP: "{{ .Values.model.sampling.temp }}"
   SAMPLING_TOP_P: "{{ .Values.model.sampling.topP }}"
@@ -161,6 +162,19 @@ data:
         # --batch-size/--ubatch-size 2048: mandatory >= image_max_tokens for the
         # non-causal vision encoder (llama.cpp PR #21550). Do not lower these to
         # save VRAM while --mmproj is loaded; lower the context instead.
+        #
+        # --cache-ram: HOST RAM, not VRAM -- llama.cpp's server-side prompt cache
+        # for restorable prefixes (PR #16391). Its default is 8192 MiB, and it
+        # really does grow to fill that: three OOMKills on 2026-09-02 all landed
+        # at 7.7-8.7 GB anon-rss. Against a container limit shared with ~19 GiB
+        # of page cache (the weights, read in by --no-mmap) that is what tips the
+        # memcg over. Bounded here; see values.yaml model.cacheRamMiB.
+        #
+        # --mlock is deliberately ABSENT. The container's RLIMIT_MEMLOCK is far
+        # below the weights, so every boot logged `failed to mlock <N>-byte
+        # buffer: Cannot allocate memory` and pinned nothing. --no-mmap already
+        # keeps the weights resident; passing --mlock only bought log noise and
+        # a failed syscall per buffer.
         exec "$LLAMA_SERVER" \
             --model "$TARGET_PATH" \
             --mmproj "$MMPROJ_PATH" \
@@ -171,11 +185,12 @@ data:
             --threads "${THREADS:-16}" \
             --cache-type-k "${CACHE_TYPE:-kvarn3}" \
             --cache-type-v "${CACHE_TYPE:-kvarn3}" \
+            --cache-ram "${CACHE_RAM_MIB:-2048}" \
             --batch-size 2048 --ubatch-size 2048 \
             --parallel 1 --kv-unified \
             --flash-attn on --jinja \
             --chat-template-file /chat-template/qwen38_chat_template.jinja \
-            --no-mmap --mlock \
+            --no-mmap \
             --metrics \
             -fit off \
             $SPEC_ARGS \
@@ -431,9 +446,18 @@ spec:
             periodSeconds: 30
             failureThreshold: 720
           resources:
+            # 40Gi, not 30Gi, and it is not slack: the memcg has to hold the
+            # engine's ~8 GB of host allocations, ~2.1 GB of CUDA shmem AND the
+            # ~19 GiB of page cache left behind by reading the weights off the
+            # hostPath HF cache. That cache is reclaimable, so it survives
+            # ordinary pressure -- but an allocation that cannot wait for
+            # reclaim OOMs instead, which is exactly what the nvidia UVM
+            # bottom-half (GFP_NOMEMALLOC) did on 2026-09-02. Matches the
+            # limitedMemory this app's OlaresManifest already declares; the node
+            # has 93 GB. See docs/olares-qwen38beellama.md.
             limits:
               cpu: "6"
-              memory: 30Gi
+              memory: 40Gi
               nvidia.com/gpu: "1"
               nvidia.com/gpumem: "23552"
             requests:

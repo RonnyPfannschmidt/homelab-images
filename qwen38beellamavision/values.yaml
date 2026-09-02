@@ -69,6 +69,21 @@ model:
   # qwen3.6 chart used: `turbo3` now only warns and redirects by width. kvarn3
   # is the 3-bit successor and the name to use directly.
   cacheType: kvarn3
+  # HOST RAM budget for llama.cpp's server-side prompt cache, in MiB
+  # (--cache-ram, llama.cpp PR #16391) — the store behind "selected slot by
+  # restorable prefix" in the log. Nothing to do with VRAM or with the KV cache
+  # above.
+  #
+  # Set explicitly because the upstream default is 8192, and the engine does
+  # grow into all of it. On 2026-09-02 that was the difference between fitting
+  # the container limit and not: three OOMKills, each at 7.7-8.7 GB anon-rss,
+  # on top of ~19 GiB of page cache from reading the weights.
+  #
+  # 2048 keeps the win (a restored prefix is a skipped prompt eval, worth
+  # seconds on the 5-16K prompts opencode sends) at a quarter of the footprint.
+  # Raising it is safe only against a *measured* memory.current, not against the
+  # limit on paper. 0 disables the cache entirely.
+  cacheRamMiB: "2048"
   # Unload model + KV cache from VRAM after this many idle seconds (llama.cpp
   # --sleep-idle-seconds). <=0 disables (the flag is then omitted entirely, see
   # the wrapper in templates/deployment.yaml).
