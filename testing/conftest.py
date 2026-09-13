@@ -78,6 +78,15 @@ def ci_values(chart: Path, tmp_path: Path) -> Path:
         "userspace": {"appData": "/tmp/appdata"},
     }
 
+    # A chart that delegates its workload to an upstream subchart puts the
+    # replica count out of reach of the lever above: the subchart reads its own
+    # key, and Helm cannot forward a parent value into it. Read the dependency
+    # names out of Chart.yaml and zero each one, so importing a chart does not
+    # quietly opt out of the thing that keeps CI from pulling a server image.
+    chart_yaml = yaml.safe_load((chart / "Chart.yaml").read_text()) or {}
+    for dependency in chart_yaml.get("dependencies") or []:
+        override[dependency["name"]] = {"replicaCount": 0}
+
     # Anything a single chart needs beyond the generated lever.
     extra = Path(__file__).parent / "values" / f"{chart.name}.yaml"
     if extra.is_file():

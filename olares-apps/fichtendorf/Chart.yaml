@@ -2,5 +2,19 @@ apiVersion: v2
 name: fichtendorf
 description: Modded Minecraft Fabric server with Geyser — Java and Bedrock clients on one world.
 type: application
-version: 0.2.1
+version: 0.3.0
 appVersion: "26.2"
+
+# The server Deployment and Service come from itzg's own chart, by the same
+# author as the `itzg/minecraft-server` image this has always run. What is left
+# in templates/ is the part that is actually ours: the packwiz pack, the Geyser
+# seed, and the Olares console entrance.
+#
+# The dependency is vendored into charts/ rather than resolved at install time,
+# because Olares installs an uploaded chart directory as-is. Refresh it with
+# `helm dependency update olares-apps/fichtendorf` after bumping the version
+# here.
+dependencies:
+  - name: minecraft
+    version: 5.2.0
+    repository: https://itzg.github.io/minecraft-server-charts/

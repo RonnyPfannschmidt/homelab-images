@@ -149,10 +149,14 @@ spec:
     Apache 2.0 license. Thinking mode + tool calling supported.
     First launch downloads ~17 GB. OpenAI-compatible API on port 8000.
 
-  developer: aamsellem
+  # Derived from aamsellem's `olares-one-market` chart of the same name, but not
+  # tracking it: this chart has diverged (v1.2.x is all local) and this
+  # repository is where it is maintained. Credited in fullDescription rather
+  # than by pointing sourceCode at a tree that no longer matches.
+  developer: ronnypfannschmidt
   website: https://github.com/Anbeeld/beellama.cpp
-  sourceCode: https://github.com/aamsellem/olares-one-market
-  submitter: aamsellem
+  sourceCode: https://github.com/RonnyPfannschmidt/homelab-images
+  submitter: ronnypfannschmidt
   locale:
     - en-US
   license:

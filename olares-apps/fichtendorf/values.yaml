@@ -1,38 +1,37 @@
+# Replica levers. Olares drives these (the manifest's `workloadReplicas`), and
+# the CI harness zeroes them so a render test never starts a pod.
+#
+# `minecraft.replicaCount` below MUST equal `workloads.fichtendorf.replicaCount`.
+# The server Deployment now comes from the upstream subchart, which reads its
+# own key, while Olares and the manifest still speak of a workload called
+# `fichtendorf`. Helm cannot forward a parent value into a subchart from
+# values.yaml, so the two are written out twice and a test asserts they agree.
 workloads:
   fichtendorf:
     replicaCount: 1
   terminal:
     replicaCount: 1
 
-# Injected by Olares at install time; the empty defaults only exist so `helm
-# template` works outside a cluster.
-userspace:
-  appData: ""
-
 # Update the Via trio (ViaFabric, ViaVersion, ViaBackwards) together, never one
 # of them alone. ViaFabric links ViaVersion's internals directly, so a mismatched
 # pair dies in ViaFabric's entrypoint with a NoClassDefFoundError before the
 # server opens a port — it presents as "the app never becomes ready" rather than
 # as a mod error, which is a slow thing to diagnose. This bit once, on 0.1.2.
-# The Minecraft and Fabric loader versions are deliberately NOT here — they are
-# literals in templates/deployment.yaml. `market upgrade` carries the
-# install-time .Values forward and only re-renders the templates, so a version
-# bumped here would stay at whatever the app was first installed with while the
-# pack in the same chart moved on. That combination boots a new pack against an
-# old server and Fabric rejects every mod at once. Measured, on 0.2.0.
-server:
-  # 4G is the floor for this pack: Fabric API + Geyser + Floodgate + the three
-  # Via* mods each hold their own mappings, and Via in particular grows with the
-  # number of protocol versions it bridges.
-  memory: "4G"
-  motd: "Ronny und Janosch - FichtenDorf"
-  levelName: "FichtenDorf"
-  seed: "25400"
-  difficulty: "easy"
-  mode: "survival"
-  maxPlayers: "10"
-  viewDistance: "10"
-  simulationDistance: "10"
+packwiz:
+  # Mirror of `[index] hash` in files/packwiz/pack.toml, and the reason the pod
+  # restarts when the pack changes.
+  #
+  # The old hand-written Deployment used a `checksum/packwiz` pod annotation
+  # computed from the rendered ConfigMap. That is not available any more: the
+  # upstream chart renders `podAnnotations` without `tpl`, so a computed value
+  # cannot reach it. Its `initContainers` *are* template-rendered, so the hash
+  # rides along as an env var on the pack server instead — changing it changes
+  # the pod template, which is what forces the Recreate.
+  #
+  # packwiz's own index hash is a better signal than a checksum over the
+  # rendered template anyway: it covers exactly the pack and nothing else.
+  # `packwiz refresh` rewrites it, and a test asserts this copy still matches.
+  indexHash: "78d06196c2c1d6d8ea2d78bfb53e3240b030ea0ab8a723dc58dfd55768cf945b"
 
 geyser:
   # The Bedrock listener. 19132/udp is the port every Bedrock client (console,
@@ -40,6 +39,281 @@ geyser:
   # ever finds, so it is deliberately not made configurable per-environment.
   bedrockPort: 19132
 
-# Port the in-pod HTTP server hands the pack to itzg's packwiz installer on.
-# Loopback only — it is not in the Service and not in the manifest's ports[].
-packServerPort: 8080
+# ---------------------------------------------------------------------------
+# itzg/minecraft 5.2.0, vendored in charts/. Everything below configures the
+# upstream chart; nothing here is a fork of it.
+minecraft:
+  # Pins the Deployment, the Service and the server container to the bare name
+  # `fichtendorf`. Three things resolve it as a literal and all of them break
+  # quietly if it drifts: the manifest's `ports[].host` and
+  # `overlayGateway.entrances[].workload`, and `--container=fichtendorf` in
+  # templates/terminal.yaml.
+  fullnameOverride: fichtendorf
+
+  # Keep equal to workloads.fichtendorf.replicaCount above.
+  replicaCount: 1
+
+  image:
+    repository: docker.io/itzg/minecraft-server
+    tag: 2026.8.2-java25
+    pullPolicy: IfNotPresent
+
+  # A Minecraft server owns its world files exclusively; two of them writing the
+  # same region files corrupts the world. Recreate, never RollingUpdate.
+  strategyType: Recreate
+
+  # The world, on a PVC rather than the `.Values.userspace.appData` hostPath the
+  # hand-written Deployment used.
+  #
+  # Not a preference — a subchart cannot see it. Olares injects `userspace.appData`
+  # as a *top-level* value, and Helm passes only `global.*` down into a subchart,
+  # so no amount of templating in the upstream chart can reach it. (Verified:
+  # a subchart `tpl` renders the parent's top-level value as the empty string.)
+  # A PVC is what the upstream chart does natively, and it is also where the
+  # k3s + Flux cluster is going anyway.
+  #
+  # The existing FichtenDorf world is NOT carried across. That is acceptable
+  # only because nobody has played in it.
+  persistence:
+    dataDir:
+      enabled: true
+      Size: 50Gi
+      accessModes:
+        - ReadWriteOnce
+
+  # The overlay gateway attaches its LAN interface on the control-plane node
+  # only; a pod scheduled anywhere else is reachable in-cluster but invisible
+  # to Bedrock's LAN discovery.
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+
+  podLabels:
+    # Lets the app's terminal entrance find this pod to exec into.
+    bytetrade.io/terminal: fichtendorf
+    # Required for the overlay gateway to reach the pod on the LAN.
+    applications.app.bytetrade.io/macvlan-init: "true"
+
+  # Only the ids are overridden; upstream's `runAsNonRoot`, its seccomp profile
+  # and the main container's dropped capabilities + read-only root filesystem
+  # are all kept. (Helm merges these maps rather than replacing them, so `{}`
+  # would not have switched them off anyway — it would have silently kept them.)
+  #
+  # The hand-written Deployment could not have kept them: its init container ran
+  # as root to chown the hostPath. On a PVC the kubelet applies `fsGroup` to the
+  # volume itself, so nothing needs root and the init container below runs as
+  # 1000 like everything else.
+  #
+  # 1000 rather than upstream's 3000/2000 because UID/GID are pinned to 1000 in
+  # extraEnv, which is what itzg's own scripts chown to.
+  podSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  extraPodSpec:
+    # Vanilla saves chunks on SIGTERM; a modded server with this many mods
+    # takes longer to unload than the 30s default and would be killed mid-save.
+    terminationGracePeriodSeconds: "120"
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 5Gi
+    limits:
+      cpu: "6"
+      memory: 8Gi
+
+  # itzg's own mc-health, which speaks the server-list protocol, rather than the
+  # bare TCP check the hand-written Deployment used. A TCP check goes green as
+  # soon as the port binds; mc-health goes green when the server actually
+  # answers, which is what the entrance needs. Not Bedrock: Geyser binds its UDP
+  # socket long before the world finishes loading.
+  #
+  # The startup budget is generous because the first boot downloads the Fabric
+  # installer, the server jar and every mod in the pack before it opens a port.
+  startupProbe:
+    enabled: true
+    periodSeconds: 10
+    failureThreshold: 90
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    failureThreshold: 5
+    timeoutSeconds: 5
+  readinessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 5
+    timeoutSeconds: 5
+
+  minecraftServer:
+    eula: "TRUE"
+    type: FABRIC
+    # Both MUST agree with files/packwiz/pack.toml [versions]: itzg resolves the
+    # Fabric installer itself and will happily set up a loader for a different
+    # Minecraft version than the pack targets, failing later in mod loading with
+    # errors that name the mods rather than the mismatch.
+    version: "26.2"
+    fabricLoaderVersion: "0.19.3"
+    # 4G is the floor for this pack: Fabric API + Geyser + Floodgate + the three
+    # Via* mods each hold their own mappings, and Via in particular grows with
+    # the number of protocol versions it bridges.
+    memory: "4G"
+    motd: "Ronny und Janosch - FichtenDorf"
+    # itzg's variable for server.properties `level-name` is LEVEL, which is what
+    # upstream calls `worldSaveName`. The old chart set LEVEL_NAME first, which
+    # is not one of itzg's variables and is silently ignored — that left the
+    # world named "world" while everything looked fine.
+    worldSaveName: "FichtenDorf"
+    levelSeed: "25400"
+    difficulty: "easy"
+    gameMode: "survival"
+    maxPlayers: 10
+    viewDistance: 10
+    pvp: false
+    enableCommandBlock: true
+    overrideServerProperties: true
+    # Stays on, and Floodgate is the reason it can: Bedrock players are
+    # authenticated by Xbox Live through Geyser and injected with a Floodgate
+    # identity, so the Java side never has to be opened up to cracked clients.
+    onlineMode: true
+    # Via* rewrites packets between protocol versions, which invalidates the
+    # chat signatures 1.19+ clients send. Left enforced, every non-native client
+    # version is kicked on its first chat message.
+    enforceSecureProfile: false
+    serviceType: ClusterIP
+    servicePort: 25565
+    # Bedrock, on the same Service as Java so the manifest's `ports[]` can point
+    # both at host `fichtendorf`.
+    extraPorts:
+      - name: bedrock
+        containerPort: 19132
+        protocol: UDP
+        service:
+          enabled: true
+          embedded: true
+          type: ClusterIP
+          port: 19132
+
+  # Everything itzg's image takes that the chart has no named value for.
+  extraEnv:
+    TZ: Europe/Berlin
+    SIMULATION_DISTANCE: "10"
+    ALLOW_FLIGHT: "true"
+    USE_AIKAR_FLAGS: "true"
+    UID: "1000"
+    GID: "1000"
+    SKIP_CHOWN_DATA: "true"
+    SKIP_SUDO: "true"
+    # Served by the pack-server sidecar below, on loopback: not in the Service
+    # and not in the manifest's ports[]. The port appears twice — here and in
+    # the sidecar's httpd args — because neither is reachable from the other
+    # (they are a subchart value and a templated container). A test asserts
+    # they agree.
+    PACKWIZ_URL: "http://127.0.0.1:8080/pack.toml"
+
+  # ConfigMap-backed only. Both names are literals the parent chart renders, so
+  # nothing here needs templating — which matters, because the upstream chart
+  # emits `extraVolumes` with `toYaml` and never `tpl`.
+  extraVolumes:
+    - volumes:
+        - name: geyser-seed
+          configMap:
+            name: geyser-seed-config
+        # Restores the `mods/` and `datapacks/` directories the ConfigMap keys
+        # had to flatten — packwiz resolves the paths in index.toml relative to
+        # pack.toml and will not find a metafile that sits beside it instead.
+        - name: packwiz
+          configMap:
+            name: packwiz-pack
+            items:
+              - key: index.toml
+                path: index.toml
+              - key: pack.toml
+                path: pack.toml
+              - key: datapacks_modern-multitools.pw.toml
+                path: datapacks/modern-multitools.pw.toml
+              - key: datapacks_waystones-data-pack.pw.toml
+                path: datapacks/waystones-data-pack.pw.toml
+              - key: mods_datapack-injector.pw.toml
+                path: mods/datapack-injector.pw.toml
+              - key: mods_fabric-api.pw.toml
+                path: mods/fabric-api.pw.toml
+              - key: mods_floodgate.pw.toml
+                path: mods/floodgate.pw.toml
+              - key: mods_geyser.pw.toml
+                path: mods/geyser.pw.toml
+              - key: mods_viabackwards.pw.toml
+                path: mods/viabackwards.pw.toml
+              - key: mods_viafabric.pw.toml
+                path: mods/viafabric.pw.toml
+              - key: mods_viaversion.pw.toml
+                path: mods/viaversion.pw.toml
+
+  initContainers:
+    # Runs to completion before anything else.
+    - |
+      name: init-data
+      image: docker.io/beclab/aboveos-busybox:1.37.0
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          mkdir -p /data/config/Geyser-Fabric
+          # Seed Geyser's config only when it has never been written. Geyser
+          # rewrites this file with its own defaults filled in on first load
+          # and players edit it from the console afterwards, so overwriting
+          # on every restart would silently revert their changes.
+          if [ ! -f /data/config/Geyser-Fabric/config.yml ]; then
+            cp /seed/config.yml /data/config/Geyser-Fabric/config.yml
+          fi
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 128Mi }
+      volumeMounts:
+        - name: datadir
+          mountPath: /data
+        - name: geyser-seed
+          mountPath: /seed
+    # A *native* sidecar: an initContainer with `restartPolicy: Always`, which
+    # the kubelet starts and waits on before the main container runs, and then
+    # keeps running for the life of the pod (k8s >= 1.29).
+    #
+    # That ordering is the whole reason it lives here rather than in
+    # `sidecarContainers`. itzg's /start reaches its packwiz step within seconds
+    # of launch and aborts the entire boot if the pack server is not answering
+    # yet — the old hand-written Deployment worked around that with an
+    # `until curl -sf "$PACKWIZ_URL"` wrapper around /start, and the upstream
+    # chart offers no way to override the main container's command. As a native
+    # sidecar the race does not exist to be worked around.
+    #
+    # Serving the ConfigMap from inside the pod keeps the pack in the chart (one
+    # copy, versioned with the app) without depending on any host outside the
+    # pod being up when the server starts — and it is the same HTTP handoff
+    # `minecraft-server` uses locally, so the two paths do not diverge.
+    # Loopback only: not in the Service, not in ports[].
+    - |
+      name: packserver
+      image: docker.io/beclab/aboveos-busybox:1.37.0
+      imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      command: [httpd, -f, -p, "8080", -h, /packwiz]
+      env:
+        # Not read by httpd. It is here so that editing the pack changes the pod
+        # template and forces a Recreate — see `packwiz.indexHash` above.
+        - name: PACK_INDEX_HASH
+          value: "78d06196c2c1d6d8ea2d78bfb53e3240b030ea0ab8a723dc58dfd55768cf945b"
+      resources:
+        requests: { cpu: 5m, memory: 16Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+      volumeMounts:
+        - name: packwiz
+          mountPath: /packwiz
+          readOnly: true

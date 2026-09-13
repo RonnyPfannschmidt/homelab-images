@@ -1,5 +1,11 @@
 # packaged Helm charts (build artifacts, produced by `helm package`)
 *.tgz
+# ...except vendored chart dependencies, which are not build artifacts. Olares
+# installs an uploaded chart directory as-is and never resolves a remote
+# `dependencies:` entry, so a chart that imports an upstream one has to carry
+# it. `helm dependency update <chart>` refreshes these from the version pinned
+# in Chart.yaml; Renovate bumps that pin.
+!olares-apps/*/charts/*.tgz
 
 __pycache__/
 .pytest_cache/

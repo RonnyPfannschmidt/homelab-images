@@ -1,22 +1,46 @@
 # homelab-images
 
 Bootable container images and Helm charts for a two-node home cluster — a
-Raspberry Pi 4 and an Olares One box — published to `ghcr.io`.
+Raspberry Pi 4 and an x86 GPU box — published to `ghcr.io`.
 
-Everything here is built from a Fedora bootc base and deployed with Flux. The
-charts are plain Kubernetes underneath: they were written for
-[Olares](https://olares.com) and carry an `OlaresManifest.yaml`, but nothing in
-them requires it, which is what makes them testable on a throwaway `kind`
-cluster.
+Everything here is built from a Fedora bootc base and deployed with **k3s +
+Flux**. That is the point of the repository: it is the app layer of a
+[replacement for Olares OS](#these-are-our-charts-and-the-manifests-are-transitional), not an
+Olares app repository. Charts are plain Kubernetes and are configured through
+Helm values, and where an upstream chart exists it is imported and configured
+rather than re-written here.
 
 ## Layout
 
 | | |
 |---|---|
 | `bootc/` | one directory per bootable image; each is a `Containerfile` on a `quay.io/fedora/fedora-bootc` or `fedora-silverblue` base |
-| `olares-apps/` | Helm charts, one per app, each with an `OlaresManifest.yaml` for the Olares market |
+| `olares-apps/` | Helm charts, one per app; upstream charts imported and configured where one exists. The directory keeps its name until the Olares box is reinstalled; see below |
 | `testing/` | chart render checks, and a `kind`-based rehearsal of the real deployment |
 | `trust/` | the cosign verification keys every image carries, and the `policy.json` generated from them |
+
+## These are our charts, and the manifests are transitional
+
+Every chart here is maintained in this repository. None of them is a public
+Olares Market listing, and the Market is not a constraint on any of them — the
+files that only existed to submit one (`owners`, `i18n/`) are gone. Two of the
+qwen charts began as copies of aamsellem's `olares-one-market` equivalents and
+have since diverged; they are credited in their descriptions, not tracked.
+
+What each chart still carries is an `OlaresManifest.yaml`, and only for as long
+as the GPU box runs Olares OS: that is how `olares-apps helm-upgrade` installs
+a chart onto it. **The manifests are not the point of the repository and
+nothing new should grow one**, but while they exist they are kept *in sync with
+the chart beside them*, so the live box stays serviceable until it is
+reinstalled.
+
+The replacement it is being reinstalled onto is k3s + Flux + Traefik +
+Authelia, where none of this exists: an `entrances[]` entry becomes an Ingress
+with forward-auth, `spec.accelerator` becomes ordinary resource requests, and
+`.Values.userspace.appData` becomes a PVC. When the box is reinstalled the
+manifests go in one commit and the directory is renamed.
+
+Until then: change a chart, change its manifest in the same commit.
 
 ## Why this repo is separate
 

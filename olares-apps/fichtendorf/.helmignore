@@ -1,2 +1,4 @@
 .DS_Store
-*.tgz
+# Not `*.tgz`: charts/ holds the vendored upstream dependency and `helm package`
+# must keep it. See .gitignore.
+/*.tgz

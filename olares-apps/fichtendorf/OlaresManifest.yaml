@@ -11,7 +11,7 @@ metadata:
   title: FichtenDorf
   description: Modded Minecraft Fabric server with Geyser — Java and Bedrock clients on one world.
   icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
-  version: 0.2.1
+  version: 0.3.0
   categories:
     - Fun
   tags:
@@ -77,14 +77,18 @@ tailscale:
       dst:
         - "*:19132"
 permission:
+  # Retained, but no longer the world's home: /data is a PersistentVolumeClaim
+  # now (see values.yaml `minecraft.persistence`), because the server Deployment
+  # comes from a subchart and Helm passes only `global.*` into one — Olares
+  # injects `userspace.appData` at the top level, where no subchart can see it.
   appData: true
 spec:
   versionName: "26.2"
   runAsUser: true
   developer: ronnypfannschmidt
   submitter: ronnypfannschmidt
-  website: https://github.com/RonnyPfannschmidt/nixos
-  sourceCode: https://github.com/RonnyPfannschmidt/nixos
+  website: https://github.com/RonnyPfannschmidt/homelab-images
+  sourceCode: https://github.com/RonnyPfannschmidt/homelab-images
   locale:
     - en-US
   license:
@@ -105,7 +109,8 @@ spec:
   fullDescription: |
     A modded Minecraft Fabric server that Java and Bedrock players share.
 
-    The modpack is managed with packwiz and ships inside this chart, so the
+    The server itself is itzg's upstream Helm chart, configured here; the
+    modpack is managed with packwiz and ships inside this chart, so the
     installed mods are whatever `olares-apps/fichtendorf/files/packwiz/` says
     they are — currently Geyser and Floodgate (Bedrock support), ViaVersion,
     ViaBackwards and ViaFabric (clients on other game versions), Fabric API, and
@@ -126,6 +131,47 @@ spec:
     Overlay for this app. From elsewhere: join over Tailscale at
     <olares-id>.olares.com on the same ports.
   upgradeDescription: |
+    v0.3.0: stop hand-writing the Deployment. The server, its Service and its
+    PVC now come from itzg's own Helm chart (`itzg/minecraft` 5.2.0, by the
+    author of the `itzg/minecraft-server` image this has always run), vendored
+    into charts/ because Olares installs an uploaded chart directory as-is. What is left in templates/ is the part that was ever ours: the
+    packwiz pack, the Geyser seed and this console entrance.
+
+    **The FichtenDorf world is not carried across.** /data moves from the Olares
+    appData hostPath to a 50Gi PersistentVolumeClaim, and nothing copies the old
+    one. This is deliberate and it is only acceptable because nobody has played
+    in that world.
+
+    The move was not optional. Helm passes only `global.*` down into a subchart,
+    and Olares injects `userspace.appData` as a top-level value, so no amount of
+    templating can put that path in a subchart's volume. A PVC is what the
+    upstream chart does natively and where k3s is going anyway.
+
+    Four things change with it, none of them chosen for their own sake:
+
+    - **The packwiz pack server is a native sidecar** — an initContainer with
+      `restartPolicy: Always`, which the kubelet starts and readies before the
+      main container. v0.2.x wrapped itzg's /start in `until curl -sf
+      "$PACKWIZ_URL"` because the two containers raced and /start aborts the
+      whole boot if the pack is not being served yet; the upstream chart gives
+      no way to override that command. As a native sidecar the race is gone
+      rather than worked around.
+    - **Pack changes restart the pod via the packwiz index hash**, carried as an
+      env var on that sidecar, instead of a `checksum/packwiz` pod annotation —
+      the upstream chart renders `podAnnotations` without `tpl`, so a computed
+      value cannot reach it. A test asserts the hash still matches pack.toml.
+    - **Health is `mc-health`, not a bare TCP check.** A TCP check goes green
+      when the port binds; mc-health goes green when the server answers the
+      server-list protocol, which is what the entrance actually needs.
+    - **The pod is hardened.** `runAsNonRoot`, a seccomp profile, dropped
+      capabilities and a read-only root filesystem, all upstream defaults that
+      v0.2.x could not have used: its init container ran as root to chown the
+      hostPath. On a PVC the kubelet applies `fsGroup` to the volume, so nothing
+      needs root any more.
+
+    No mod, Minecraft version, Fabric loader, Geyser or image-tag change. Same
+    pack, same 26.2, same ports.
+
     v0.2.1: actually apply the 26.2 move. v0.2.0 shipped the 26.2 pack but the
     server still came up as 1.21.8, because `market upgrade` carries the
     install-time .Values forward and only re-renders templates — the image tag
