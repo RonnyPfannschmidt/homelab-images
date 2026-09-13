@@ -1,0 +1,6 @@
+# Git does not track an empty directory, and every image does
+# `COPY trust/keys/ /etc/pki/containers/` - so without a file here the build
+# fails on a fresh checkout with "copier: stat: /trust/keys: no such file or
+# directory". It did, once.
+#
+# Verification keys land beside this file as cosign-YYYY-MM.pub.

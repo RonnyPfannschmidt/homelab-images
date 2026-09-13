@@ -33,23 +33,30 @@ def test_policy_matches_the_key_directory() -> None:
     )
 
 
-def test_keys_are_public_keys(tmp_path: Path) -> None:
-    """A private key in `trust/keys/` would be published; check the header."""
-    for key in sorted((TRUST / "keys").glob("*")):
-        text = key.read_text()
-        assert "PUBLIC KEY" in text, f"{key.name} is not a public key"
-        assert "PRIVATE" not in text, (
-            f"{key.name} contains private key material and this repository is public"
+def test_nothing_in_the_key_directory_is_private() -> None:
+    """Every file, not just the .pub ones - this repository is public."""
+    for path in sorted((TRUST / "keys").iterdir()):
+        assert "PRIVATE" not in path.read_text(), (
+            f"trust/keys/{path.name} contains private key material"
         )
+
+
+def test_keys_are_public_keys() -> None:
+    """A `.pub` that is not a public key would be trusted and never match."""
+    for key in sorted((TRUST / "keys").glob("*.pub")):
+        assert "PUBLIC KEY" in key.read_text(), f"{key.name} is not a public key"
 
 
 def test_keys_are_named_by_when_they_were_minted() -> None:
     """`cosign-YYYY-MM.pub`, so a rotation reads as a rotation in `ls`."""
     import re
 
-    for key in sorted((TRUST / "keys").glob("*.pub")):
-        assert re.fullmatch(r"cosign-\d{4}-\d{2}\.pub", key.name), (
-            f"{key.name} does not look like cosign-YYYY-MM.pub"
+    for path in sorted((TRUST / "keys").iterdir()):
+        if path.name == ".gitkeep":
+            # Present so git tracks the directory at all; see the file itself.
+            continue
+        assert re.fullmatch(r"cosign-\d{4}-\d{2}\.pub", path.name), (
+            f"{path.name} does not look like cosign-YYYY-MM.pub"
         )
 
 
