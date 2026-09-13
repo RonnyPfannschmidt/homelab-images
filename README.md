@@ -16,6 +16,7 @@ cluster.
 | `bootc/` | one directory per bootable image; each is a `Containerfile` on a `quay.io/fedora/fedora-bootc` or `fedora-silverblue` base |
 | `olares-apps/` | Helm charts, one per app, each with an `OlaresManifest.yaml` for the Olares market |
 | `testing/` | chart render checks, and a `kind`-based rehearsal of the real deployment |
+| `trust/` | the cosign verification keys every image carries, and the `policy.json` generated from them |
 
 ## Why this repo is separate
 
@@ -32,6 +33,14 @@ is not cosmetic:
   side to rotate or leak.
 - **Images published from a public repository are public**, so
   `bootc upgrade` on a node needs no registry pull secret.
+
+## Signing
+
+Every image is signed twice: keylessly, binding it to the workflow and commit
+that produced it, and with a key, because that is the only form
+`/etc/containers/policy.json` can enforce on a node. How to verify an image
+yourself, and why a rotation is an ordered procedure rather than a flag flip,
+is in [docs/signing.md](docs/signing.md).
 
 ## Testing
 

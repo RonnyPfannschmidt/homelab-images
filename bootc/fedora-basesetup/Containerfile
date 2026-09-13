@@ -24,3 +24,14 @@ RUN dnf install -y \
     psmisc \
     lsof \
     && dnf clean all
+
+# Trust material, shared by every image here and copied from the repository
+# root - which is why this image builds with the root as its context.
+#
+# The running image carries the keys that verify the *next* one, so this is
+# what makes `bootc upgrade` checkable at all, and what makes a key rotation an
+# ordered procedure rather than a flag flip. See trust/README.md and
+# docs/signing.md. With trust/keys/ empty the policy enforces nothing and this
+# is inert.
+COPY trust/etc/ /etc/
+COPY trust/keys/ /etc/pki/containers/

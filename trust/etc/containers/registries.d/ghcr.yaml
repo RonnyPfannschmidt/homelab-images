@@ -1,0 +1,6 @@
+# containers/image looks for a cosign signature attachment only where this is
+# enabled. Without it, a correctly signed image is reported as unsigned, which
+# is a confusing way to spend an afternoon.
+docker:
+  ghcr.io/ronnypfannschmidt:
+    use-sigstore-attachments: true

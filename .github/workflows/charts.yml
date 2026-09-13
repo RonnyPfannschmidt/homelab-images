@@ -1,11 +1,12 @@
 # Two tiers, split into two jobs because they cost very different amounts.
 #
-# `render` is seconds and gates every push. `cluster` creates a real kind
-# cluster, installs every chart into it and rehearses the Flux path that joins
-# a public chart to private values - minutes, and affordable only because
-# standard runners are free on a public repository.
+# `render` is seconds and gates every push: it covers the charts and the trust
+# material, and the cluster tests skip themselves in it. `cluster` creates a
+# real kind cluster, installs every chart into it and rehearses the Flux path
+# that joins a public chart to private values - minutes, and affordable only
+# because standard runners are free on a public repository.
 
-name: charts
+name: checks
 
 on:
   push:
@@ -13,12 +14,14 @@ on:
       - main
     paths:
       - olares-apps/**
+      - trust/**
       - testing/**
       - pyproject.toml
       - .github/workflows/charts.yml
   pull_request:
     paths:
       - olares-apps/**
+      - trust/**
       - testing/**
       - pyproject.toml
       - .github/workflows/charts.yml
@@ -28,12 +31,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: charts-${{ github.ref }}
+  group: checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   render:
-    name: render and validate
+    name: render, validate, check trust
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +50,9 @@ jobs:
             | sudo tar -xz -C /usr/local/bin kubeconform
           kubeconform -v
 
-      - run: uv run pytest testing/test_charts_render.py -v
+      # The whole suite: without KIND_TESTS the cluster tests skip themselves,
+      # so this stays seconds while covering anything added later.
+      - run: uv run pytest testing/ -v
 
   cluster:
     name: install on kind

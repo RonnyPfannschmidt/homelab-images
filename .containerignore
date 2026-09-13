@@ -1,0 +1,17 @@
+# Every image here builds from the repository root, so that each can copy
+# trust/ into itself. Without this the context carries the charts, the test
+# harness and a virtualenv - megabytes sent to the build for a directory of
+# public keys.
+
+.git/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+olares-apps/
+testing/
+docs/
+uv.lock
