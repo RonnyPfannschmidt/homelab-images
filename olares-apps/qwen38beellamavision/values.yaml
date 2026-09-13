@@ -1,0 +1,105 @@
+admin: ""
+bfl:
+  username: ""
+workloads:
+  llminit:
+    replicaCount: 1
+  qwen38beellamavision:
+    replicaCount: 1
+userspace:
+  appData: ""
+  appCache: ""
+  userData: ""
+olaresEnv: {}
+model:
+  # Target must NOT contain MTP tensors — the MTP head is loaded as a separate
+  # draft file below, and llama-server rejects the pair otherwise. unsloth ships
+  # no MTP tensors at all (verified 2026-08-14: the repo has base quants and
+  # mmproj only), so any of its quants is a valid target.
+  target:
+    repo: unsloth/Qwen3.8-27B-GGUF
+    file: Qwen3.8-27B-UD-Q3_K_XL.gguf
+    # Quant suffix of `file`, appended to the repo id to form MODEL_NAME (and
+    # therefore --alias). Split out from the hardcoded string the qwen3.6 chart
+    # used so the two can never drift apart when the quant changes.
+    quant: UD-Q3_K_XL
+  mmproj:
+    repo: unsloth/Qwen3.8-27B-GGUF
+    file: mmproj-F16.gguf
+  # Multi-Token Prediction head, served as a draft model (`--spec-type
+  # draft-mtp` + `-md`). This replaces the qwen3.6 app's DFlash drafter, which
+  # has no Qwen3.8 equivalent: as of 2026-08-14 spiritbuun publishes DFlash
+  # GGUFs for Qwen3.5-27B and Qwen3.6-27B only, and a DFlash drafter is trained
+  # against one specific target, so the 3.6 one is not a drop-in.
+  #
+  # Qwen3.8's MTP weights ship inside the upstream checkpoint
+  # (`mtp_num_hidden_layers` in config.json), but llama-server can only use them
+  # when they are extracted to their own GGUF (`convert_hf_to_gguf.py --mtp`).
+  # Most GGUF repos never do that; ggml-org does, which is why the head comes
+  # from a different repo than the target.
+  #
+  # Leave `repo` empty to disable speculative decoding entirely: the wrapper
+  # then omits -md and all --spec-* flags, and llm-init downloads two files
+  # instead of three. Useful as a first-boot fallback.
+  mtp:
+    repo: ggml-org/Qwen3.8-27B-GGUF
+    file: mtp-Qwen3.8-27B-Q8_0.gguf
+    # Tokens drafted per step. 3 is the llama.cpp default and what the only
+    # published Qwen3.8 MTP measurements used.
+    nMax: "3"
+  # No `alias` key: the engine's --alias is pinned to MODEL_NAME in the
+  # ConfigMap (see templates/deployment.yaml) because llm-init's readiness gate
+  # matches on it. A free-form alias here would silently disable the API.
+  #
+  # 160000, below both the qwen3.6 app's 200000 and this model's native 262144,
+  # because the MTP head costs VRAM the DFlash drafter did not. Weights are
+  # 13.44 (target) + 0.93 (mmproj) + 3.16 (MTP head) = 17.5 GB, against a
+  # 23552 MiB HAMi reservation, leaving ~5 GB for KV plus ~1.5 GiB of compute
+  # buffers at ubatch 2048. kvarn3 KV runs ~31 GB per 1M tokens on this stack,
+  # so 160K fits with margin and 200K does not.
+  #
+  # Two ways to buy context back, in preference order:
+  #   1. swap the MTP head to ggml-org's mtp-Qwen3.8-27B-Q4_0.gguf (1.68 GB,
+  #      frees 1.5 GB) — costs draft accept rate, never correctness
+  #   2. drop to kvarn2 KV — costs KV precision
+  # Raise this only after a boot at 160000 is confirmed healthy.
+  ctxSize: "160000"
+  threads: "16"
+  # KV cache compression. BeeLlama v0.4.0 REMOVED the TurboQuant/TCQ formats the
+  # qwen3.6 chart used: `turbo3` now only warns and redirects by width. kvarn3
+  # is the 3-bit successor and the name to use directly.
+  cacheType: kvarn3
+  # HOST RAM budget for llama.cpp's server-side prompt cache, in MiB
+  # (--cache-ram, llama.cpp PR #16391) — the store behind "selected slot by
+  # restorable prefix" in the log. Nothing to do with VRAM or with the KV cache
+  # above.
+  #
+  # Set explicitly because the upstream default is 8192, and the engine does
+  # grow into all of it. On 2026-09-02 that was the difference between fitting
+  # the container limit and not: three OOMKills, each at 7.7-8.7 GB anon-rss,
+  # on top of ~19 GiB of page cache from reading the weights.
+  #
+  # 2048 keeps the win (a restored prefix is a skipped prompt eval, worth
+  # seconds on the 5-16K prompts opencode sends) at a quarter of the footprint.
+  # Raising it is safe only against a *measured* memory.current, not against the
+  # limit on paper. 0 disables the cache entirely.
+  cacheRamMiB: "2048"
+  # Unload model + KV cache from VRAM after this many idle seconds (llama.cpp
+  # --sleep-idle-seconds). <=0 disables (the flag is then omitted entirely, see
+  # the wrapper in templates/deployment.yaml).
+  #
+  # Inherited as DISABLED from the qwen3.6 app, where enabling it cost 4
+  # container restarts/day: freeing ~19 GiB on sleep drives HAMi-core's
+  # per-container usage counter negative, and the next wake's cuMemGetInfo hits
+  # its `limit < usage` guard -> CUDA_ERROR_INVALID_VALUE -> ggml_abort. Nothing
+  # about that is model-specific, so do not turn it on here either. See
+  # docs/olares-qwen36beellama.md for the full analysis.
+  sleepIdleSeconds: "-1"
+  # Qwen3.8 thinking-mode sampling, per the Qwen3.8-27B model card
+  # (temperature 1.0, top_p 0.95, top_k 20, min_p 0.0). These differ from the
+  # qwen3.6 chart's --temp 0.6; do not copy that value back over.
+  sampling:
+    temp: "1.0"
+    topP: "0.95"
+    topK: "20"
+    minP: "0.0"

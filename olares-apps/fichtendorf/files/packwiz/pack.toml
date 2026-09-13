@@ -1,0 +1,16 @@
+name = "Ronnys Server"
+author = "Ronny Pfannschmidt"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "78d06196c2c1d6d8ea2d78bfb53e3240b030ea0ab8a723dc58dfd55768cf945b"
+
+[versions]
+fabric = "0.19.3"
+minecraft = "26.2"
+
+[options]
+datapack-folder = "datapacks"

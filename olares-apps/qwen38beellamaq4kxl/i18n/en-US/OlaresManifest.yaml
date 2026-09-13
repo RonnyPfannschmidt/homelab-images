@@ -1,0 +1,17 @@
+metadata:
+  title: Qwen38 27B BeeLlama Q4_K_XL
+  description: "Qwen3.8 27B vision-capable at UD-Q4_K_XL — MTP speculative decoding, kvarn3 KV @ 64K, quality-over-context sibling of qwen38beellamavision"
+
+spec:
+  fullDescription: |
+    Qwen3.8 27B vision-capable served via upstream Anbeeld/beellama.cpp v0.4.3, at the larger UD-Q4_K_XL quant.
+    Image: ghcr.io/anbeeld/beellama.cpp:server-cuda13-v0.4.3 (CUDA 13, sm_120 Blackwell).
+    Target: unsloth/Qwen3.8-27B-GGUF UD-Q4_K_XL (17.92 GB, MTP-free as the draft pairing requires).
+    Vision projector: unsloth mmproj-F16.gguf (0.93 GB).
+    MTP draft head: ggml-org/Qwen3.8-27B-GGUF mtp-Qwen3.8-27B-Q4_0.gguf (1.68 GB) — the coarser head, chosen because the 1.5 GB it saves against Q8_0 is what keeps the context usable; a rougher draft costs accept rate, never correctness.
+    KV cache: kvarn3 (3-bit; BeeLlama v0.4.0 removed the turbo3/TurboQuant formats the Qwen3.6 app used).
+    Spec: --spec-type draft-mtp --spec-draft-n-max 3, batch 2048, ubatch 2048 (mandatory >= image_max_tokens for the non-causal vision encoder).
+    Context: 64K. Weights alone are 19.12 GiB against a 23.00 GiB reservation, so the 4.5 GB of extra fidelity over the Q3 sibling comes straight out of context.
+    Difference vs qwen38beellamavision: that chart runs UD-Q3_K_XL with a Q8_0 MTP head at 160K and measures 63.7-64.5 t/s. This one trades context for weight fidelity. Both can be installed, but not run at once — each reserves the whole GPU budget.
+    Not benchmarked yet; expect slower than the Q3 sibling and a lower MTP accept rate.
+    OpenAI-compatible chat API with image_url multimodal content type; reachable in-cluster at http://llminit.qwen38beellamaq4kxl-shared:8090/v1.

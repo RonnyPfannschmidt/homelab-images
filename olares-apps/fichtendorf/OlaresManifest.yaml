@@ -1,0 +1,186 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  fichtendorf: 1
+  terminal: 1
+metadata:
+  name: fichtendorf
+  appid: fichtendorf
+  title: FichtenDorf
+  description: Modded Minecraft Fabric server with Geyser — Java and Bedrock clients on one world.
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  version: 0.2.1
+  categories:
+    - Fun
+  tags:
+    - gaming
+# A shell, not a game surface. See templates/terminal.yaml for why the console
+# runs through rcon-cli rather than the JVM's stdin.
+entrances:
+  - name: terminal
+    host: terminal
+    port: 80
+    title: FichtenDorf Console
+    authLevel: private
+    openMethod: window
+# Minecraft is not HTTP, so both listeners are ports[] rather than entrances.
+# The exposePort values are the protocol defaults on purpose: Bedrock's LAN
+# "Friends" tab only ever probes 19132/udp, and a Java client that has to be
+# told a port is a port every player has to be told about forever.
+#
+# 25565/tcp collides with the market `minecraft` app, which claims the same
+# exposePort — that app has to be uninstalled before this one installs.
+ports:
+  - name: java
+    host: fichtendorf
+    port: 25565
+    protocol: tcp
+    exposePort: 25565
+  - name: bedrock
+    host: fichtendorf
+    port: 19132
+    protocol: udp
+    exposePort: 19132
+# LAN play. The gateway puts the pod on the home network directly, which is what
+# makes Bedrock's LAN discovery work at all — without it a Bedrock client can
+# only join by typing an address, and consoles largely cannot.
+#
+# Requires the gateway to be enabled in Settings -> Network -> Overlay gateway,
+# and it reports "Ethernet connection is not active" on this box today: the
+# gateway needs a wired link, so LAN play stays unavailable until the Olares box
+# is on ethernet. Internet play over Tailscale below does not depend on it.
+overlayGateway:
+  enable: true
+  entrances:
+    - title: FichtenDorf Java
+      workload: fichtendorf
+      port: 25565
+      protocol: tcp
+      description: Join from Minecraft Java Edition on the LAN (TCP 25565)
+    - title: FichtenDorf Bedrock
+      workload: fichtendorf
+      port: 19132
+      protocol: udp
+      description: Join from Minecraft Bedrock (console, phone, Windows) on the LAN (UDP 19132)
+# Internet play, for players who are not on the home network: they join at
+# <olares-id>.olares.com on the port below once they are in the Tailscale
+# network. This is the route that works today; opening the ports on the router
+# instead is a fritzbox change this chart cannot make.
+tailscale:
+  acls:
+    - proto: tcp
+      dst:
+        - "*:25565"
+    - proto: udp
+      dst:
+        - "*:19132"
+permission:
+  appData: true
+spec:
+  versionName: "26.2"
+  runAsUser: true
+  developer: ronnypfannschmidt
+  submitter: ronnypfannschmidt
+  website: https://github.com/RonnyPfannschmidt/nixos
+  sourceCode: https://github.com/RonnyPfannschmidt/nixos
+  locale:
+    - en-US
+  license:
+    - text: Minecraft EULA
+      url: https://www.minecraft.net/en-us/eula
+  # 5Gi requested against MEMORY=4G: the JVM heap is 4G and the rest is the JVM
+  # itself plus Via*'s off-heap mapping tables. Requesting exactly the heap size
+  # gets the pod OOM-killed under load rather than at start, which looks like a
+  # crash and is not.
+  requiredMemory: 5Gi
+  limitedMemory: 8Gi
+  requiredCpu: "2"
+  limitedCpu: "6"
+  requiredDisk: 4Gi
+  limitedDisk: 50Gi
+  supportArch:
+    - amd64
+  fullDescription: |
+    A modded Minecraft Fabric server that Java and Bedrock players share.
+
+    The modpack is managed with packwiz and ships inside this chart, so the
+    installed mods are whatever `olares-apps/fichtendorf/files/packwiz/` says
+    they are — currently Geyser and Floodgate (Bedrock support), ViaVersion,
+    ViaBackwards and ViaFabric (clients on other game versions), Fabric API, and
+    a datapack injector carrying Modern Multitools and the Waystones data pack.
+
+    Java clients connect on TCP 25565, Bedrock clients on UDP 19132. Both land
+    in the same world; Floodgate lets Bedrock players in without the Java server
+    leaving online mode.
+
+    First start downloads the Fabric installer, the server jar and every mod,
+    which takes several minutes before the port opens.
+
+    There is no web UI. The desktop entrance opens a shell in the server
+    container; run server commands there with `rcon-cli`, e.g. `rcon-cli op
+    <name>`.
+
+    On the LAN: enable Settings -> Network -> Overlay gateway and turn on
+    Overlay for this app. From elsewhere: join over Tailscale at
+    <olares-id>.olares.com on the same ports.
+  upgradeDescription: |
+    v0.2.1: actually apply the 26.2 move. v0.2.0 shipped the 26.2 pack but the
+    server still came up as 1.21.8, because `market upgrade` carries the
+    install-time .Values forward and only re-renders templates — the image tag
+    (a literal) changed to java25 while VERSION and FABRIC_LOADER_VERSION (from
+    .Values) stayed on 1.21.8 / 0.17.2. Fabric then rejected all nine mods at
+    once. Both are literals in the template now, next to a note saying why.
+
+    v0.2.0: move the server from Minecraft 1.21.8 to 26.2, so that current
+    Bedrock clients can actually join.
+
+    This is the only way to get there. Geyser's Bedrock protocol support is tied
+    to the Geyser build, and the newest Geyser that exists for 1.21.8 is
+    2.8.4-b948, which does not speak Bedrock 26.40 — it said so in its own
+    startup log on every boot. Geyser 2.11.2-b1233 does, and it is built for
+    26.2, so the server version had to move with it.
+
+    All nine mods move together: Geyser 2.8.4 -> 2.11.2-b1233, Floodgate 2.2.5
+    -> 2.2.6-b67, ViaFabric 0.4.19 -> 0.4.21+182-26.x, ViaVersion and
+    ViaBackwards 5.4.2 -> 5.12.0, Fabric API 0.136.1 -> 0.158.0+26.2, the
+    datapack injector -> 1.0.0+26.2, Modern Multitools -> 1.4.3, Waystones
+    3.4.9 -> 3.5.5. Fabric loader 0.17.2 -> 0.19.3.
+
+    The runtime image moves from java21 to java25 with it — 26.2 is beyond what
+    the Java 21 image is built to run.
+
+    The existing FichtenDorf world is carried across and upgraded in place by
+    the server on first load, rather than regenerated.
+
+    The v0.1.3 Via pin is gone, and had to be: ViaFabric 0.4.21 is the release
+    that pairs with ViaVersion 5.12.0, which is what 0.1.3 was waiting for.
+
+    v0.1.3: hold ViaVersion and ViaBackwards at 5.4.2. 5.12.0 does not load
+    here: ViaFabric 0.4.19 is the newest ViaFabric there is and it links
+    com.viaversion.viaversion.api.protocol.AbstractSimpleProtocol, which 5.12.0
+    removed — the server dies in ViaFabric's entrypoint with NoClassDefFoundError
+    before it ever opens a port. These two cannot move again until ViaFabric
+    does. Everything else from v0.1.2 stays updated.
+
+    v0.1.2: update the pack. Geyser 2.8.3-b903 -> 2.8.4-b948, which is what
+    supports current Bedrock clients; 2.8.3 refused anything on Bedrock 26.40.
+    Also Fabric API 0.131.0 -> 0.136.1, Modern Multitools 1.3.1 -> 1.4.3,
+    Waystones 3.4.8 -> 3.4.9. Floodgate, ViaFabric and the datapack injector
+    had no update.
+
+    v0.1.1: name the world FichtenDorf for real — the world was created as
+    "world" because LEVEL_NAME is not one of itzg's variables (LEVEL is), and
+    stamp config-version on the Geyser seed so its "config is out of date"
+    warning means what it says.
+
+    v0.1.0: first release.
+options:
+  # Only the console entrance goes through the entrance proxy, and an exec
+  # session is a long-lived connection the 15s default would cut.
+  apiTimeout: 0
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system

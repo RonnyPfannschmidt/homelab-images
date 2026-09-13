@@ -1,0 +1,13 @@
+name = "Modern Multitools"
+filename = "modern-multitools-1.4.3.jar"
+side = "both"
+
+[download]
+url = "https://cdn.modrinth.com/data/qBEsRofU/versions/3MQTb5uQ/modern-multitools-1.4.3.jar"
+hash-format = "sha512"
+hash = "7178b12ae954372e512bd0de750c8f0c07419fefdf8fa7c0c5a5a3e093b6b5bdfd64a47567ccda493975a1201f2a26c2f8e174828be99cf2e030556fa9eed4b6"
+
+[update]
+[update.modrinth]
+mod-id = "qBEsRofU"
+version = "3MQTb5uQ"

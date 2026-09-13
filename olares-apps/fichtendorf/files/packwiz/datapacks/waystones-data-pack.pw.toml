@@ -1,0 +1,13 @@
+name = "KawaMood's Waystones"
+filename = "pk_waystones_V.3.5.5_mc_26.2.zip"
+side = "both"
+
+[download]
+url = "https://cdn.modrinth.com/data/UKUcgltR/versions/mEHHjLao/pk_waystones_V.3.5.5_mc_26.2.zip"
+hash-format = "sha512"
+hash = "841b68849c3e2eda25bde00f340cc99abf778cf769f841e4453b9edd2a3523984846a1c06cd1e278791038656b6abde68f8bd943f71944fe78e7dbf150a6d4e3"
+
+[update]
+[update.modrinth]
+mod-id = "UKUcgltR"
+version = "mEHHjLao"

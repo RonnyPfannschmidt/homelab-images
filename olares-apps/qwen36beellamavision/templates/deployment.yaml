@@ -1,0 +1,438 @@
+---
+# Runtime config shared by the llm-init downloader and the wrapper script that
+# waits for it. Single source of truth is .Values.model.* (values.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llamacpp-beellama-vision-env
+  namespace: "{{ .Release.Namespace }}"
+data:
+  TARGET_REPO: "{{ .Values.model.target.repo }}"
+  TARGET_FILE: "{{ .Values.model.target.file }}"
+  MMPROJ_REPO: "{{ .Values.model.mmproj.repo }}"
+  MMPROJ_FILE: "{{ .Values.model.mmproj.file }}"
+  DRAFT_REPO: "{{ .Values.model.draft.repo }}"
+  DRAFT_FILE: "{{ .Values.model.draft.file }}"
+  # MUST equal llm-init's MODEL_NAME. llm-init polls the engine's /v1/models and
+  # only enables its OpenAI data plane once it finds a model advertised under
+  # MODEL_NAME; anything else leaves it answering 503 {"code":"not_ready",
+  # "message":"model not ready; data plane disabled"} forever, even though the
+  # engine is healthy. The stock llama.cpp template gets this for free by running
+  # `llama-server -hf "$MODEL_NAME"`; this chart loads local GGUF paths instead,
+  # so the alias has to be pinned to the same string by hand.
+  MODEL_ALIAS: "{{ .Values.model.target.repo }}:UD-Q3_K_XL"
+  CTX_SIZE: "{{ .Values.model.ctxSize }}"
+  THREADS: "{{ .Values.model.threads }}"
+  SLEEP_IDLE_SECONDS: "{{ .Values.model.sleepIdleSeconds }}"
+  LLAMACPP_PORT: "8081"
+  HF_HUB_CACHE: "/cache/hf/hub"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qwen36-chat-template
+  namespace: "{{ .Release.Namespace }}"
+data:
+  qwen36_chat_template.jinja: |
+{{ .Files.Get "files/qwen36_chat_template.jinja" | indent 4 }}
+---
+# Wrapper the main container execs once llm-init's sentinel appears. llm-init's
+# multi-source download only auto-wires ROLE=main -> --model and
+# ROLE=mmproj -> --mmproj; it has no ROLE for a speculative-decoding draft
+# model, so this script resolves all three paths itself from the shared HF
+# cache (by filename search, not by assuming a revision/ref layout) and execs
+# llama-server with beellama's full flag set.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beellama-vision-wrapper
+  namespace: "{{ .Release.Namespace }}"
+data:
+    beellama-vision.sh: |
+        #!/bin/sh
+        set -eu
+
+        HF_HUB_CACHE=${HF_HUB_CACHE:-/cache/hf/hub}
+        log() { printf '[wrapper-beellama-vision] %s\n' "$*"; }
+
+        find_cached_file() {
+            # huggingface_hub cache layout: models--<org>--<repo>/snapshots/<rev>/<file>
+            repo_dir="$HF_HUB_CACHE/models--$(echo "$1" | sed 's#/#--#')"
+            found=$(find "$repo_dir/snapshots" -name "$2" 2>/dev/null | head -1)
+            if [ -z "$found" ]; then
+                log "ERROR: could not locate $2 under $repo_dir/snapshots"
+                exit 1
+            fi
+            echo "$found"
+        }
+
+        # Idle VRAM unload is opt-in and currently off (see values.yaml): the
+        # unload corrupts HAMI-core's usage accounting and the next wake aborts
+        # the process in cuMemGetInfo. Omit the flag entirely when disabled
+        # rather than relying on llama-server accepting a negative value.
+        # Off is necessary but not sufficient — the counter also drifts without
+        # any sleep cycle (docs/olares-qwen36beellama.md).
+        SLEEP_ARG=""
+        if [ "${SLEEP_IDLE_SECONDS:-0}" -gt 0 ] 2>/dev/null; then
+            SLEEP_ARG="--sleep-idle-seconds $SLEEP_IDLE_SECONDS"
+            log "idle VRAM unload enabled after ${SLEEP_IDLE_SECONDS}s"
+        else
+            log "idle VRAM unload disabled"
+        fi
+
+        TARGET_PATH=$(find_cached_file "$TARGET_REPO" "$TARGET_FILE")
+        MMPROJ_PATH=$(find_cached_file "$MMPROJ_REPO" "$MMPROJ_FILE")
+        DRAFT_PATH=$(find_cached_file "$DRAFT_REPO" "$DRAFT_FILE")
+
+        log "target=$TARGET_PATH"
+        log "mmproj=$MMPROJ_PATH"
+        log "draft=$DRAFT_PATH"
+
+        # -fit off: with CUDA_DEVICE_MEMORY_LIMIT*=0 HAMi-core's cuMemGetInfo
+        # hook reports `free - usage`, which is garbage whenever its counter has
+        # drifted negative. Nothing here needs auto-fitting anyway -- -ngl,
+        # --ctx-size and both batch sizes are pinned below -- so stop the engine
+        # querying device memory at all.
+        cd /app
+        exec ./llama-server \
+            --model "$TARGET_PATH" \
+            --spec-draft-model "$DRAFT_PATH" \
+            --mmproj "$MMPROJ_PATH" \
+            --spec-type dflash \
+            --spec-dflash-cross-ctx 1024 \
+            --alias "${MODEL_ALIAS:-$MODEL_NAME}" \
+            --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
+            -ngl 99 --spec-draft-ngl 99 \
+            --ctx-size "${CTX_SIZE:-200000}" \
+            --threads "${THREADS:-16}" \
+            --cache-type-k turbo3 --cache-type-v turbo3 \
+            --batch-size 2048 --ubatch-size 2048 \
+            --parallel 1 --kv-unified \
+            --flash-attn on --jinja \
+            --chat-template-file /chat-template/qwen36_chat_template.jinja \
+            --no-mmap --mlock \
+            --metrics \
+            -fit off \
+            $SLEEP_ARG \
+            --temp 0.6 --top-k 20 --min-p 0.0
+---
+# llm-init: downloads target/mmproj/draft into the platform-shared HF cache,
+# reports progress, and is the app's permanent entrance (progress dashboard
+# before ready, OpenAI/Anthropic-compatible proxy to llama-server after).
+# Runs on default-scheduler with no GPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: llm-init
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.llminit.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: llm-init
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: llm-init
+        app.bytetrade.io/shared-entrance: "true"
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      initContainers:
+        - name: init-chown
+          image: docker.io/beclab/aboveos-busybox:1.37.0
+          command:
+            - sh
+            - -c
+            - mkdir -p /cache/hf/hub/.locks && chown -R 1000:1000 /cache/hf/hub /run/llm-init || true
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      containers:
+        - name: llm-init
+          image: docker.io/beclab/llm-init:v1.3.1
+          envFrom:
+            - configMapRef:
+                name: llamacpp-beellama-vision-env
+          env:
+            - name: ENGINE_KIND
+              value: llamacpp
+            - name: MODEL_NAME
+              value: "{{ .Values.model.target.repo }}:UD-Q3_K_XL"
+            - name: MODEL_MODE
+              value: chat
+            - name: MODEL_SUPPORTS
+              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice,supports_vision"
+            - name: MODEL_SOURCE
+              value: "hf://{{ .Values.model.target.repo }} --include {{ .Values.model.target.file }},hf://{{ .Values.model.mmproj.repo }} --include {{ .Values.model.mmproj.file }},hf://{{ .Values.model.draft.repo }} --include {{ .Values.model.draft.file }}"
+            - name: HF_ENDPOINT
+              value: "https://huggingface.co/"
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: RUN_DIR
+              value: /run/llm-init
+            - name: PORT
+              value: "8090"
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_FORMAT
+              value: json
+            - name: APP_URL
+              value: "{{ .Values.olaresEnv.APP_URL }}"
+          ports:
+            - containerPort: 8090
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8090
+              scheme: HTTP
+            failureThreshold: 3
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: 8090
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface
+            type: DirectoryOrCreate
+        - name: run-state
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+      restartPolicy: Always
+      schedulerName: default-scheduler
+---
+# BeeLlama GPU server: reads models from the shared HF cache populated by llm-init,
+# then execs llama-server with DFlash speculative decoding + vision projector.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: llamacpp
+  name: "{{ .Chart.Name }}"
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.qwen36beellamavision.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: llamacpp
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: llamacpp
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      containers:
+        - name: llamacpp
+          image: "docker.io/aamsellem/beellama-cpp:0.1.3-rc1"
+          command: ["/bin/sh", "/llm-init/wrappers/beellama-vision.sh"]
+          envFrom:
+            - configMapRef:
+                name: llamacpp-beellama-vision-env
+          env:
+            - name: ENGINE_KIND
+              value: llamacpp
+            - name: MODEL_NAME
+              value: "{{ .Values.model.target.repo }}:UD-Q3_K_XL"
+            - name: GPU_TYPE
+              value: nvidia
+            - name: HF_ENDPOINT
+              value: "https://huggingface.co/"
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PGID
+              value: "1000"
+            - name: PUID
+              value: "1000"
+            - name: TZ
+              value: Etc/UTC
+            # Both are "0" = unlimited, and that is deliberate (v1.2.6): it is
+            # the only setting that disarms HAMi-core's false-OOM abort without
+            # unloading libvgpu.so.
+            #
+            # HAMi-core's per-container usage counter is unsigned and drifts
+            # negative under this workload's alloc/free churn; once it does, it
+            # reads as ~1.8e19 and beats *any* positive limit, so the old
+            # 30000m "safety belt" could never help (see
+            # docs/olares-qwen36beellama.md). Both guard sites short-circuit on
+            # a zero limit before they can misfire:
+            #   allocator.c oom_check      -> `if (limit == 0) return 0;`
+            #   memory.c   cuMemGetInfo_v2 -> `if (limit == 0)` falls through to
+            #                                 the real driver, ahead of the
+            #                                 `limit < usage` branch that
+            #                                 returned CUDA_ERROR_INVALID_VALUE.
+            #
+            # Do NOT "fix" this back to 23552m: a real limit re-arms both
+            # aborts. The cap was fiction anyway (30000 MiB on a 23.89 GiB
+            # card), and the HAMi scheduler still reserves nvidia.com/gpumem.
+            #
+            # The non-indexed var is set too because it is the fallback in
+            # HAMi-core's do_init_device_memory_limits() and the device plugin
+            # may inject it from the gpumem request.
+            - name: CUDA_DEVICE_MEMORY_LIMIT
+              value: "0"
+            - name: CUDA_DEVICE_MEMORY_LIMIT_0
+              value: "0"
+            # Persist the CUDA JIT cache (PTX->SASS) across pod restarts. The
+            # image has no native Blackwell (sm_120) cubins, so kernels are
+            # JIT-compiled on first use; without this the cache lives in the
+            # container's ~/.nv and every restart pays the compile cost on the
+            # first request. 4 GiB max because ggml fat binaries exceed the
+            # 1 GiB default and eviction would re-trigger JIT.
+            - name: CUDA_CACHE_PATH
+              value: /cuda-cache/nv-compute
+            - name: CUDA_CACHE_MAXSIZE
+              value: "4294967296"
+            - name: WAIT_TIMEOUT
+              value: "3600"
+          ports:
+            - containerPort: 8081
+              name: llamacpp
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 600
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 720
+          resources:
+            limits:
+              cpu: "6"
+              memory: 30Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+            requests:
+              cpu: 200m
+              memory: 21Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+              readOnly: true
+            - mountPath: /run/llm-init
+              name: run-state
+              readOnly: true
+            - mountPath: /llm-init/wrappers
+              name: wrapper
+              readOnly: true
+            - mountPath: "/chat-template"
+              name: chat-template
+              readOnly: true
+            - mountPath: /cuda-cache
+              name: cuda-cache
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface
+            type: DirectoryOrCreate
+        - name: run-state
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: cuda-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/cuda-cache/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: wrapper
+          configMap:
+            name: beellama-vision-wrapper
+            defaultMode: 365
+        - name: chat-template
+          configMap:
+            name: qwen36-chat-template
+      restartPolicy: Always
+      runtimeClassName: nvidia
+      schedulerName: hami-scheduler
+---
+# Entrance service: OlaresManifest entrances[].host resolves this name — without
+# it the app never leaves `initializing` (entrance readiness probes this Service).
+# Doubles as the cross-namespace API endpoint for other apps, reachable as
+# http://llminit.qwen36beellamavision-shared:8090 thanks to options.shared.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+  type: ClusterIP
+---
+# Compose service-name alias: llm-init ENGINE_KIND=llamacpp derives the engine
+# proxy target http://llamacpp:$LLAMACPP_PORT, so the GPU server must be
+# reachable under exactly this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamacpp
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llamacpp
+spec:
+  selector:
+    io.kompose.service: llamacpp
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP

@@ -1,0 +1,272 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fichtendorf
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: fichtendorf
+spec:
+  replicas: {{ .Values.workloads.fichtendorf.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: fichtendorf
+  # A Minecraft server owns its world files exclusively; two of them writing the
+  # same region files corrupts the world. Recreate, never RollingUpdate.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: fichtendorf
+        # Lets the app's terminal entrance find this pod to exec into.
+        bytetrade.io/terminal: fichtendorf
+        # Required for the overlay gateway to reach the pod on the LAN.
+        applications.app.bytetrade.io/macvlan-init: "true"
+      annotations:
+        # Restart the pod when the pack changes, so `packwiz-docker run mr add …`
+        # plus a chart upgrade actually installs the new mods instead of leaving
+        # the old ones in /data/mods until someone notices.
+        checksum/packwiz: {{ include (print $.Template.BasePath "/packwiz.yaml") . | sha256sum }}
+    spec:
+      # The overlay gateway attaches its LAN interface on the control-plane node
+      # only; a pod scheduled anywhere else is reachable in-cluster but invisible
+      # to Bedrock's LAN discovery.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+      enableServiceLinks: false
+      # Vanilla saves chunks on SIGTERM; a modded server with this many mods
+      # takes longer to unload than the 30s default and would be killed mid-save.
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: init-data
+          image: docker.io/beclab/aboveos-busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mkdir -p /data/config/Geyser-Fabric
+              # Seed Geyser's config only when it has never been written. Geyser
+              # rewrites this file with its own defaults filled in on first load
+              # and players edit it from the console afterwards, so overwriting
+              # on every restart would silently revert their changes.
+              if [ ! -f /data/config/Geyser-Fabric/config.yml ]; then
+                cp /seed/config.yml /data/config/Geyser-Fabric/config.yml
+              fi
+              chown -R 1000:1000 /data/config
+              chown 1000:1000 /data
+          securityContext:
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: geyser-seed
+              mountPath: /seed
+      containers:
+        # itzg's packwiz support drives packwiz-installer, which fetches the pack
+        # over HTTP. Serving the ConfigMap from inside the pod keeps the pack in
+        # the chart (one copy, versioned with the app) without depending on any
+        # host outside the pod being up when the server starts — and it is the
+        # same HTTP handoff `minecraft-server` uses locally, so the two paths do
+        # not diverge. Loopback only: not in the Service, not in ports[].
+        - name: packserver
+          image: docker.io/beclab/aboveos-busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - httpd
+            - -f
+            - -p
+            - "{{ .Values.packServerPort }}"
+            - -h
+            - /packwiz
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: packwiz
+              mountPath: /packwiz
+              readOnly: true
+        - name: fichtendorf
+          image: docker.io/itzg/minecraft-server:2026.8.2-java25
+          imagePullPolicy: IfNotPresent
+          stdin: true
+          tty: true
+          # Wait for the sidecar before handing control to itzg's /start. The two
+          # containers start concurrently and /start reaches the packwiz step
+          # within seconds; if the pack server is not answering yet, itzg aborts
+          # the whole boot rather than retrying.
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              until curl -sf -o /dev/null "$PACKWIZ_URL"; do
+                echo "[fichtendorf] waiting for the in-pod pack server at $PACKWIZ_URL"
+                sleep 2
+              done
+              exec /start
+          ports:
+            - name: java
+              containerPort: 25565
+              protocol: TCP
+            - name: bedrock
+              containerPort: {{ .Values.geyser.bedrockPort }}
+              protocol: UDP
+          env:
+            - name: TZ
+              value: Europe/Berlin
+            - name: EULA
+              value: "TRUE"
+            - name: TYPE
+              value: FABRIC
+            # Literals, not .Values — see the note at the top of values.yaml.
+            # Both MUST agree with files/packwiz/pack.toml [versions]: itzg
+            # resolves the Fabric installer itself and will happily set up a
+            # loader for a different Minecraft version than the pack targets,
+            # failing later in mod loading with errors that name the mods
+            # rather than the mismatch.
+            - name: VERSION
+              value: "26.2"
+            - name: FABRIC_LOADER_VERSION
+              value: "0.19.3"
+            - name: PACKWIZ_URL
+              value: "http://127.0.0.1:{{ .Values.packServerPort }}/pack.toml"
+            - name: MEMORY
+              value: "{{ .Values.server.memory }}"
+            - name: USE_AIKAR_FLAGS
+              value: "true"
+            - name: UID
+              value: "1000"
+            - name: GID
+              value: "1000"
+            - name: SKIP_CHOWN_DATA
+              value: "true"
+            - name: SKIP_SUDO
+              value: "true"
+            # Stays on, and Floodgate is the reason it can: Bedrock players are
+            # authenticated by Xbox Live through Geyser and injected with a
+            # Floodgate identity, so the Java side never has to be opened up to
+            # cracked clients to let them in.
+            - name: ONLINE_MODE
+              value: "TRUE"
+            # Via* rewrites packets between protocol versions, which invalidates
+            # the chat signatures 1.19+ clients send. Left enforced, every
+            # non-native client version is kicked on its first chat message.
+            - name: ENFORCE_SECURE_PROFILE
+              value: "false"
+            - name: MOTD
+              value: "{{ .Values.server.motd }}"
+            # itzg's variable for server.properties `level-name` is LEVEL.
+            # LEVEL_NAME is not one of its variables and is silently ignored,
+            # which leaves the world named "world" while everything looks fine.
+            - name: LEVEL
+              value: "{{ .Values.server.levelName }}"
+            - name: SEED
+              value: "{{ .Values.server.seed }}"
+            - name: DIFFICULTY
+              value: "{{ .Values.server.difficulty }}"
+            - name: MODE
+              value: "{{ .Values.server.mode }}"
+            - name: MAX_PLAYERS
+              value: "{{ .Values.server.maxPlayers }}"
+            - name: VIEW_DISTANCE
+              value: "{{ .Values.server.viewDistance }}"
+            - name: SIMULATION_DISTANCE
+              value: "{{ .Values.server.simulationDistance }}"
+            - name: PVP
+              value: "false"
+            - name: ALLOW_FLIGHT
+              value: "true"
+            - name: ENABLE_COMMAND_BLOCK
+              value: "true"
+            - name: OVERRIDE_SERVER_PROPERTIES
+              value: "true"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 5Gi
+            limits:
+              cpu: "6"
+              memory: 8Gi
+          # Probe the Java port, not Bedrock: Geyser binds its UDP socket long
+          # before the world finishes loading, so a UDP check would report ready
+          # while the server is still generating chunks. The budget is generous
+          # because the first boot downloads the Fabric installer, the server
+          # jar and every mod in the pack before it opens the port at all.
+          startupProbe:
+            tcpSocket:
+              port: 25565
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 90
+          livenessProbe:
+            tcpSocket:
+              port: 25565
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            type: DirectoryOrCreate
+            path: '{{ .Values.userspace.appData }}/data'
+        - name: geyser-seed
+          configMap:
+            name: geyser-seed-config
+        # Restores the `mods/` and `datapacks/` directories the ConfigMap keys
+        # had to flatten — packwiz resolves the paths in index.toml relative to
+        # pack.toml and will not find a metafile that sits beside it instead.
+        - name: packwiz
+          configMap:
+            name: packwiz-pack
+            items:
+{{- range $path, $_ := .Files.Glob "files/packwiz/**" }}
+              - key: {{ $path | trimPrefix "files/packwiz/" | replace "/" "_" }}
+                path: {{ $path | trimPrefix "files/packwiz/" }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fichtendorf
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: fichtendorf
+spec:
+  type: ClusterIP
+  selector:
+    io.kompose.service: fichtendorf
+  ports:
+    - name: java
+      port: 25565
+      targetPort: 25565
+      protocol: TCP
+    - name: bedrock
+      port: {{ .Values.geyser.bedrockPort }}
+      targetPort: {{ .Values.geyser.bedrockPort }}
+      protocol: UDP
