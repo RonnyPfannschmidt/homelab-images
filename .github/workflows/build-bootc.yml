@@ -133,12 +133,20 @@ jobs:
             echo "no bootc binary in $img - skipping lint"
           fi
 
+      # --digestfile, not `podman inspect .RepoDigests`. podman may convert the
+      # manifest on the way out, so the digest the registry stores is not
+      # necessarily the one the local image reports - and signing the local one
+      # attaches a signature to a digest that no tag resolves to. That happened:
+      # `latest` pointed at one digest while the .sig tags sat on others, and
+      # every in-CI check passed, because signing digest D and verifying digest
+      # D is self-consistent no matter what the tags say.
       - name: Push
         if: steps.meta.outputs.push == 'true'
         run: |
           for t in ${{ steps.meta.outputs.tags }}; do
-            podman push "$t"
+            podman push --digestfile /tmp/digest "$t"
           done
+          echo "digest=${{ steps.meta.outputs.image }}@$(cat /tmp/digest)" >> "$GITHUB_ENV"
 
       - name: Install cosign
         if: steps.meta.outputs.push == 'true'
@@ -168,8 +176,6 @@ jobs:
           # credential one.
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
-          digest=$(podman inspect --format '{{index .RepoDigests 0}}' ${{ steps.meta.outputs.primary }})
-          echo "digest=$digest" >> "$GITHUB_ENV"
           echo "signing $digest"
           cosign sign --yes "$digest"
 
@@ -182,19 +188,26 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$digest"
 
-      # Signing without verifying is decoration. Identity by regexp, not
-      # literal: the identity string carries the ref, so it becomes
-      # @refs/tags/... on a tag build and changes entirely if this file is
-      # renamed or turned into a reusable workflow. An exact match starts
-      # failing silently the first time any of that happens.
+      # Signing without verifying is decoration - and verifying the digest
+      # alone is nearly as decorative, since it is the digest just signed.
+      # Every *tag* is checked too, because a tag is what anyone actually
+      # pulls, and a tag resolving to an unsigned digest is precisely the
+      # failure that got past an earlier version of this file.
+      #
+      # Identity by regexp, not literal: the identity string carries the ref,
+      # so it becomes @refs/tags/... on a tag build and changes entirely if
+      # this file is renamed or turned into a reusable workflow. An exact match
+      # starts failing silently the first time any of that happens.
       - name: Verify (keyless)
         if: steps.meta.outputs.push == 'true'
         run: |
-          cosign verify \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "^${{ github.server_url }}/${{ github.repository }}/\.github/workflows/" \
-            "$digest" > /dev/null
-          echo "keyless signature verifies"
+          for ref in "$digest" ${{ steps.meta.outputs.tags }}; do
+            cosign verify \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^${{ github.server_url }}/${{ github.repository }}/\.github/workflows/" \
+              "$ref" > /dev/null
+            echo "verifies: $ref"
+          done
 
       # Against every key the images ship, not just the one just used: this is
       # what proves a node running any trusted key can still accept what CI
