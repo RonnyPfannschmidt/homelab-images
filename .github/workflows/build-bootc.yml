@@ -141,6 +141,14 @@ jobs:
       - name: Sign
         if: steps.meta.outputs.push == 'true'
         run: |
+          # cosign needs its own login. `podman login` writes to
+          # $XDG_RUNTIME_DIR/containers/auth.json; cosign reads the Docker
+          # config, finds nothing there, and fails only at the point where it
+          # pushes the signature - after the image itself is already in the
+          # registry, which makes it look like a signing bug rather than a
+          # credential one.
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
           digest=$(podman inspect --format '{{index .RepoDigests 0}}' ${{ steps.meta.outputs.primary }})
           echo "signing $digest"
           cosign sign --yes "$digest"
