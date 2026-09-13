@@ -152,7 +152,7 @@ jobs:
         run: podman save --format docker-archive -o /tmp/scan.tar ${{ steps.meta.outputs.primary }}
 
       - name: Scan
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           input: /tmp/scan.tar
           format: sarif
