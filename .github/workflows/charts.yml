@@ -1,0 +1,88 @@
+# Two tiers, split into two jobs because they cost very different amounts.
+#
+# `render` is seconds and gates every push. `cluster` creates a real kind
+# cluster, installs every chart into it and rehearses the Flux path that joins
+# a public chart to private values - minutes, and affordable only because
+# standard runners are free on a public repository.
+
+name: charts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - olares-apps/**
+      - testing/**
+      - pyproject.toml
+      - .github/workflows/charts.yml
+  pull_request:
+    paths:
+      - olares-apps/**
+      - testing/**
+      - pyproject.toml
+      - .github/workflows/charts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: charts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: render and validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install kubeconform
+        run: |
+          version=v0.8.0
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${version}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - run: uv run pytest testing/test_charts_render.py -v
+
+  cluster:
+    name: install on kind
+    runs-on: ubuntu-24.04
+    # Not gated on `render`: a chart that fails to lint will fail here too, and
+    # running them in parallel puts both answers in front of you at once.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The Flux tier pins a GitRepository to the commit under test and
+          # checks it is reachable on a remote, which needs more than a shallow
+          # single-commit checkout to verify.
+          fetch-depth: 0
+      - uses: azure/setup-helm@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: helm/kind-action@v1
+        with:
+          version: v0.33.0
+          cluster_name: homelab-ci
+          # The fixture creates and deletes its own cluster; this action is
+          # here only to put the `kind` binary on PATH.
+          install_only: true
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+          df -h /
+
+      - name: Install charts and rehearse the Flux join
+        env:
+          KIND_TESTS: '1'
+          # Flux fetches this repository over the network at the commit under
+          # test, so it only works once that commit is on a remote - true for a
+          # push, and for a pull request whose head is pushed to this repo, but
+          # not for a fork. The fixture skips itself rather than failing when
+          # the commit is not reachable.
+          FLUX_TESTS: '1'
+        run: uv run pytest testing/test_kind_deploy.py -v

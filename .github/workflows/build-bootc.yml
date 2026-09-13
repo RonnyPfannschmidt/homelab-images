@@ -1,0 +1,183 @@
+# Build every bootc image under bootc/ and publish it to ghcr.io.
+#
+# Native builds on per-architecture runners rather than QEMU: standard runners
+# are free and unlimited on a public repository, arm64 included, so there is no
+# reason to emulate a dnf install of a ~900 MB base. `runner` is a matrix field
+# so that an arm64 image costs one line to add.
+
+name: bootc images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bootc/**
+      - .github/workflows/build-bootc.yml
+  pull_request:
+    paths:
+      - bootc/**
+      - .github/workflows/build-bootc.yml
+  workflow_dispatch:
+    inputs:
+      push_to_registry:
+        description: Push the built images to ghcr.io
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write        # cosign keyless
+      security-events: write # trivy SARIF
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: fedora-basesetup
+            runner: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A bootc base is ~1 GB compressed and the runners ship 14 GB of disk.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      - name: Work out image name and tags
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$owner/${{ matrix.image }}"
+          sha=$(git rev-parse --short HEAD)
+
+          tags="$image:sha-$sha"
+          case "${{ github.event_name }}" in
+            pull_request) tags="$tags $image:pr-${{ github.event.number }}" ;;
+            *)
+              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+                tags="$tags $image:latest"
+              else
+                branch=$(echo "${GITHUB_REF#refs/heads/}" | tr -c '[:alnum:]._-' '-')
+                tags="$tags $image:$branch"
+              fi
+              ;;
+          esac
+
+          # Never from a pull request: a fork PR must not reach the registry.
+          push=false
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            push=true
+          elif [ "${{ inputs.push_to_registry }}" = "true" ]; then
+            push=true
+          fi
+
+          {
+            echo "image=$image"
+            echo "tags=$tags"
+            echo "primary=$image:sha-$sha"
+            echo "push=$push"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # podman rather than buildx: it is what these Containerfiles are built
+      # with by hand, so a green run means the same command works locally.
+      - name: Build
+        run: |
+          set -x
+          podman build --pull=always \
+            $(for t in ${{ steps.meta.outputs.tags }}; do printf -- '-t %s ' "$t"; done) \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -f bootc/${{ matrix.image }}/Containerfile \
+            bootc/${{ matrix.image }}
+
+      # The check that knows what a bootable container must look like - /var
+      # populated at build time, /opt misuse, a missing kernel. Skipped rather
+      # than failed if the image has no bootc binary, so a plain container
+      # image could join the matrix later without editing this step.
+      - name: bootc container lint
+        run: |
+          img=${{ steps.meta.outputs.primary }}
+          if podman run --rm --entrypoint sh "$img" -c 'command -v bootc' >/dev/null 2>&1; then
+            podman run --rm --entrypoint bootc "$img" container lint
+          else
+            echo "no bootc binary in $img - skipping lint"
+          fi
+
+      - name: Push
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          for t in ${{ steps.meta.outputs.tags }}; do
+            podman push "$t"
+          done
+
+      - name: Install cosign
+        if: steps.meta.outputs.push == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      # Sign the digest, not the tags: a tag is a moving target, and signing it
+      # by name signs whatever it pointed at when cosign resolved it.
+      - name: Sign
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          digest=$(podman inspect --format '{{index .RepoDigests 0}}' ${{ steps.meta.outputs.primary }})
+          echo "signing $digest"
+          cosign sign --yes "$digest"
+
+      # Handed to trivy as a tar rather than by name: the image lives in
+      # podman's store, and trivy would resolve a bare reference through the
+      # docker daemon, which never sees it.
+      - name: Export the image for scanning
+        run: podman save --format docker-archive -o /tmp/scan.tar ${{ steps.meta.outputs.primary }}
+
+      - name: Scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          input: /tmp/scan.tar
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'   # a Fedora base carries known CVEs; report, do not block
+
+      - name: Reclaim the export
+        if: always()
+        run: rm -f /tmp/scan.tar
+
+      - name: Upload scan to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.image }}"
+            echo
+            echo "- runner: \`${{ matrix.runner }}\`"
+            echo "- pushed: \`${{ steps.meta.outputs.push }}\`"
+            echo "- tags:"
+            for t in ${{ steps.meta.outputs.tags }}; do echo "  - \`$t\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"

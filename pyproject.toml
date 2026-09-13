@@ -1,0 +1,18 @@
+[project]
+name = "homelab-images-testing"
+version = "0"
+description = "Test harness for the charts and images in this repository"
+requires-python = ">=3.13"
+dependencies = [
+    "pytest",
+    "pytest-xdist",
+    "pyyaml",
+]
+
+# Not a distributable package - `uv run pytest` only needs the dependency set.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["testing"]
+addopts = "-ra"

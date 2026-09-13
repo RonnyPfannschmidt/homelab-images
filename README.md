@@ -42,9 +42,11 @@ uv run pytest testing/ -v                 # renders every chart, seconds, no clu
 KIND_TESTS=1 uv run pytest testing/ -v    # adds a real kind cluster, minutes
 ```
 
-The render tier runs `helm lint`, templates each chart against the values in
-`testing/values-ci/`, and validates every rendered object against the upstream
-Kubernetes schemas. It needs `helm` and nothing else.
+The render tier runs `helm lint`, templates each chart, and validates every
+rendered object against the upstream Kubernetes schemas. It needs `helm` and
+nothing else. The values it renders against are generated from each chart's own
+`values.yaml` rather than written out by hand, so a workload added later cannot
+quietly escape them.
 
 The `kind` tier installs each chart into a throwaway cluster and reads the
 applied objects back, to check that values actually reached the workload rather

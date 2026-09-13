@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "docker:enableMajor", "docker:pinDigests"],
+  "timezone": "UTC",
+  "labels": ["dependencies", "renovate"],
+  "commitMessagePrefix": "chore(deps):",
+  "semanticCommits": "enabled",
+  "prConcurrentLimit": 5,
+  "dockerfile": {
+    "managerFilePatterns": ["/(^|/)Containerfile$/", "/(^|/)Containerfile\\.[^/]*$/"]
+  },
+  "packageRules": [
+    {
+      "description": "Base image digests are a deliberate bump, never automatic - a rebuilt Fedora base is a new OS under every node.",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": false
+    },
+    {
+      "description": "One PR for all the bootc bases rather than one per image.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/fedora/**"],
+      "groupName": "fedora base images"
+    }
+  ]
+}
