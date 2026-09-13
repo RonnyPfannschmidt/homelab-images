@@ -1,0 +1,8 @@
+# packaged Helm charts (build artifacts, produced by `helm package`)
+*.tgz
+
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
