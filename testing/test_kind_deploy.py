@@ -31,7 +31,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from conftest import FLUX_VERSION, REPO_ROOT, kube_json, kubectl, run
 
 #: One chart, not all four, for the Flux rehearsal. What is being tested is the
@@ -53,10 +52,16 @@ def test_chart_installs(chart: Path, ci_values: Path, kube: str) -> None:
     kubectl(kube, "create", "namespace", namespace, check=False)
     try:
         run(
-            "helm", "install", chart.name, str(chart),
-            "--kubeconfig", kube,
-            "--namespace", namespace,
-            "--values", str(ci_values),
+            "helm",
+            "install",
+            chart.name,
+            str(chart),
+            "--kubeconfig",
+            kube,
+            "--namespace",
+            namespace,
+            "--values",
+            str(ci_values),
             "--wait=false",
             timeout=300,
         )
@@ -69,8 +74,16 @@ def test_chart_installs(chart: Path, ci_values: Path, kube: str) -> None:
                 f"{item['spec']['replicas']} replicas; it would pull images"
             )
     finally:
-        run("helm", "uninstall", chart.name, "--kubeconfig", kube,
-            "--namespace", namespace, check=False)
+        run(
+            "helm",
+            "uninstall",
+            chart.name,
+            "--kubeconfig",
+            kube,
+            "--namespace",
+            namespace,
+            check=False,
+        )
         kubectl(kube, "delete", "namespace", namespace, "--wait=false", check=False)
 
 
@@ -82,11 +95,18 @@ def _flux_unavailable() -> str | None:
     if not os.environ.get("FLUX_TESTS"):
         return "set FLUX_TESTS=1 to run; this installs Flux and fetches over the network"
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     on_remote = subprocess.run(
         ["git", "branch", "-r", "--contains", head],
-        cwd=REPO_ROOT, capture_output=True, text=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if not on_remote.stdout.strip():
         return f"commit {head[:8]} is not on any remote; Flux fetches from {PUBLIC_REPO_URL}"
@@ -106,8 +126,14 @@ def flux(kube: str) -> str:
     url = f"https://github.com/fluxcd/flux2/releases/download/{FLUX_VERSION}/install.yaml"
     kubectl(kube, "apply", "-f", url, timeout=600)
     kubectl(
-        kube, "wait", "--for=condition=Available",
-        "deployment", "--all", "-n", "flux-system", "--timeout=300s",
+        kube,
+        "wait",
+        "--for=condition=Available",
+        "deployment",
+        "--all",
+        "-n",
+        "flux-system",
+        "--timeout=300s",
         timeout=360,
     )
     return kube
@@ -124,7 +150,11 @@ def test_flux_joins_a_public_chart_to_private_values(flux: str, tmp_path: Path) 
     neither the chart's defaults nor the repository: only in the Secret.
     """
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     namespace = "ci-flux"
 
@@ -199,8 +229,13 @@ def test_flux_joins_a_public_chart_to_private_values(flux: str, tmp_path: Path) 
 
     kubectl(flux, "apply", "-f", str(path))
     kubectl(
-        flux, "wait", "--for=condition=Ready",
-        f"helmrelease/{FLUX_CHART}", "-n", namespace, "--timeout=300s",
+        flux,
+        "wait",
+        "--for=condition=Ready",
+        f"helmrelease/{FLUX_CHART}",
+        "-n",
+        namespace,
+        "--timeout=300s",
         timeout=360,
     )
 

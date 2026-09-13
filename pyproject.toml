@@ -16,3 +16,18 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["testing"]
 addopts = "-ra"
+
+# Declared here rather than inherited. This repository is normally checked out
+# *inside* the private one, and both ruff and mypy walk up from the file they
+# are given until they find a config - so without these, a local run picks up
+# the parent repository's settings and CI, where this is a standalone clone,
+# does not. The two would disagree silently.
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Matches the private repository, so the two lint alike.
+extend-select = ["UP", "I"]
+
+[tool.mypy]
+strict = true

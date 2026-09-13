@@ -1,0 +1,95 @@
+# The gate. `pre-commit install` once; after that a commit that fails it does
+# not happen. `pre-commit run -a` is for pre-flighting, not a separate duty.
+#
+# Two exclusions carry most of the thinking here, and both are about files that
+# are not what they look like:
+#
+#   olares-apps/*/templates/  - Helm templates. They have a .yaml suffix and
+#     they are not YAML; every one of them fails a YAML parse on its Go
+#     template actions. `helm lint` and `helm template` are what check these,
+#     and the test suite runs both.
+#
+#   olares-apps/*/files/      - bytes, not text. packwiz records a sha256 of
+#     index.toml in pack.toml and of every metafile in index.toml, and the
+#     pinned .jinja chat templates are diffed against upstream. A whitespace
+#     fixer "correcting" one of these invalidates a hash, and the symptom is a
+#     server that fails to install its mods - a long way from the commit that
+#     caused it. `packwiz refresh` owns the formatting of that tree.
+
+exclude: |
+  (?x)^(
+    olares-apps/[^/]+/files/.*
+    |olares-apps/[^/]+/charts/.*
+    |trust/keys/.*\.pub
+  )$
+
+repos:
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-merge-conflict
+  - id: check-json
+  - id: check-toml
+  - id: check-yaml
+    args: [--allow-multiple-documents]
+    # See the note at the top: these are Go templates wearing a .yaml suffix.
+    exclude: ^olares-apps/[^/]+/templates/
+  - id: check-added-large-files
+    # A vendored chart is tens of KB; a model or a disk image is not something
+    # this repository should ever carry, and ghcr is where large artifacts go.
+    args: [--maxkb=512]
+
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.16.7
+  hooks:
+  - id: ruff-check
+    args: [--fix]
+  - id: ruff-format
+
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.18.2
+  hooks:
+  - id: mypy
+    args: [--strict]
+    additional_dependencies:
+      - pytest
+      - types-PyYAML
+
+- repo: https://github.com/rhysd/actionlint
+  rev: v1.7.7
+  hooks:
+  - id: actionlint
+    # actionlint runs shellcheck over every `run:` block, which is most of what
+    # is worth checking in a repository whose job is two build workflows.
+
+- repo: https://github.com/hadolint/hadolint
+  rev: v2.12.0
+  hooks:
+  - id: hadolint-docker
+    files: Containerfile$
+    # DL3041 wants every `dnf install` pinned to a package version. That is the
+    # wrong shape for a bootc image: the base is pinned by digest (Renovate
+    # bumps it daily) and the package set is deliberately whatever that base's
+    # repositories hold at build time. Pinning versions here would mean hand-
+    # bumping them forever and would still not make the build reproducible.
+    args: [--ignore, DL3041]
+
+- repo: local
+  hooks:
+  - id: chart-render-tests
+    name: chart render tests
+    language: system
+    # The render tier only - seconds, no cluster, no image pull. It is what
+    # catches a template that does not parse, a value under the wrong path, an
+    # object that is not valid Kubernetes, and the invariants that cannot live
+    # in one file: a subchart's replica count matching the workload lever, a
+    # vendored dependency being present, packwiz's index hash matching the pack.
+    #
+    # `--frozen`: a hook must not re-resolve and rewrite uv.lock underneath the
+    # commit it is gating.
+    entry: uv run --frozen pytest testing/ -q
+    pass_filenames: false
+    files: ^(olares-apps/|testing/|trust/|pyproject\.toml$|uv\.lock$)

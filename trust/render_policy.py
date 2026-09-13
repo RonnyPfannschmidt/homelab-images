@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).parent
 KEYS = HERE / "keys"
@@ -50,8 +51,8 @@ def trusted_keys() -> list[str]:
     return [f"{KEYS_IN_IMAGE}/{p.name}" for p in sorted(KEYS.glob("*.pub"))]
 
 
-def build_policy() -> dict:
-    policy: dict = {
+def build_policy() -> dict[str, Any]:
+    policy: dict[str, Any] = {
         "default": [{"type": "insecureAcceptAnything"}],
         "transports": {
             "docker-daemon": {"": [{"type": "insecureAcceptAnything"}]},

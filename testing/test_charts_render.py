@@ -16,7 +16,6 @@ from urllib.parse import urlparse
 
 import pytest
 import yaml
-
 from conftest import render, run
 
 #: Objects whose schema kubeconform cannot know about, because they are not
@@ -62,8 +61,14 @@ def test_every_object_is_namespaced_or_cluster_scoped_on_purpose(
     it should be noticed when it starts to, because on a shared cluster that is
     the difference between an app and a privilege.
     """
-    cluster_scoped = {"ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition",
-                      "PersistentVolume", "StorageClass", "Namespace"}
+    cluster_scoped = {
+        "ClusterRole",
+        "ClusterRoleBinding",
+        "CustomResourceDefinition",
+        "PersistentVolume",
+        "StorageClass",
+        "Namespace",
+    }
     found = [
         f"{o['kind']}/{o.get('metadata', {}).get('name')}"
         for o in render(chart, ci_values)
@@ -83,7 +88,8 @@ def test_rendered_objects_validate(chart: Path, ci_values: Path, tmp_path: Path)
         "-summary",
         # A chart is written against whatever the cluster runs; pin it here so
         # the check means something specific.
-        "-kubernetes-version", "1.32.0",
+        "-kubernetes-version",
+        "1.32.0",
         *(arg for kind in NON_UPSTREAM_KINDS for arg in ("-skip", kind)),
         str(rendered),
     )
@@ -139,9 +145,7 @@ def test_subchart_replica_count_matches_the_workload_lever(chart: Path) -> None:
 
     values = yaml.safe_load((chart / "values.yaml").read_text()) or {}
     own = values.get("workloads", {}).get(chart.name, {}).get("replicaCount")
-    assert own is not None, (
-        f"{chart.name}: no workloads.{chart.name}.replicaCount to match against"
-    )
+    assert own is not None, f"{chart.name}: no workloads.{chart.name}.replicaCount to match against"
     for dependency in dependencies:
         name = dependency["name"]
         theirs = (values.get(name) or {}).get("replicaCount")
@@ -163,8 +167,7 @@ def test_vendored_dependencies_are_present_and_pinned(chart: Path) -> None:
     for dependency in chart_yaml.get("dependencies") or []:
         vendored = chart / "charts" / f"{dependency['name']}-{dependency['version']}.tgz"
         assert vendored.is_file(), (
-            f"{chart.name}: {vendored.name} is not vendored; run "
-            f"`helm dependency update {chart}`"
+            f"{chart.name}: {vendored.name} is not vendored; run `helm dependency update {chart}`"
         )
 
 
@@ -212,9 +215,7 @@ def test_packwiz_url_port_matches_the_pack_server(chart: Path) -> None:
 
     port = urlparse(url).port
     init_containers = (values.get("minecraft") or {}).get("initContainers") or []
-    serving = [
-        yaml.safe_load(c) for c in init_containers if "httpd" in str(c)
-    ]
+    serving = [yaml.safe_load(c) for c in init_containers if "httpd" in str(c)]
     assert serving, f"{chart.name}: PACKWIZ_URL is set but nothing serves the pack"
     for container in serving:
         assert str(port) in [str(a) for a in container["command"]], (

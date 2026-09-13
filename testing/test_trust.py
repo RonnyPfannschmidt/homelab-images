@@ -78,7 +78,9 @@ def test_sigstore_attachments_are_enabled_for_the_namespace() -> None:
     assert scopes[render_policy.SCOPE]["use-sigstore-attachments"] is True
 
 
-def test_rotation_keeps_both_keys_acceptable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rotation_keeps_both_keys_acceptable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Two keys in the directory means either signature verifies.
 
     The property the whole rotation procedure rests on: containers/image

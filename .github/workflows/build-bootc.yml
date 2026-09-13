@@ -113,6 +113,9 @@ jobs:
       - name: Build
         run: |
           set -x
+          # shellcheck disable=SC2046  # the splitting is the point: the loop
+          # emits `-t tag -t tag ...` and each word has to become its own
+          # argument. Quoting it would pass one giant tag to podman.
           podman build --pull=always \
             $(for t in ${{ steps.meta.outputs.tags }}; do printf -- '-t %s ' "$t"; done) \
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \

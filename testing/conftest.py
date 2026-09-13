@@ -24,6 +24,7 @@ import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -37,7 +38,9 @@ FLUX_VERSION = "v2.9.5"
 
 
 def run(*command: str, timeout: int = 600, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    # check=False is deliberate and explicit: this wrapper inspects returncode
+    # itself, below, so that a failure reports the command and its tail.
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     if check and result.returncode != 0:
         tail = "\n".join((result.stdout + result.stderr).splitlines()[-40:])
         raise AssertionError(f"failed: {' '.join(command)}\n{tail}")
@@ -97,11 +100,17 @@ def ci_values(chart: Path, tmp_path: Path) -> Path:
     return path
 
 
-def render(chart: Path, values: Path, namespace: str = "ci") -> list[dict]:
+def render(chart: Path, values: Path, namespace: str = "ci") -> list[dict[str, Any]]:
     """`helm template`, parsed. Empty documents dropped."""
     out = run(
-        "helm", "template", chart.name, str(chart),
-        "--values", str(values), "--namespace", namespace,
+        "helm",
+        "template",
+        chart.name,
+        str(chart),
+        "--values",
+        str(values),
+        "--namespace",
+        namespace,
     ).stdout
     return [doc for doc in yaml.safe_load_all(out) if doc]
 
@@ -138,9 +147,14 @@ def kube() -> Iterator[str]:
         run("kind", "delete", "cluster", "--name", name, check=False)
 
 
-def kubectl(kubeconfig: str, *args: str, check: bool = True, **kw) -> subprocess.CompletedProcess[str]:
-    return run("kubectl", "--kubeconfig", kubeconfig, *args, check=check, **kw)
+def kubectl(
+    kubeconfig: str, *args: str, check: bool = True, timeout: int = 600
+) -> subprocess.CompletedProcess[str]:
+    return run("kubectl", "--kubeconfig", kubeconfig, *args, check=check, timeout=timeout)
 
 
-def kube_json(kubeconfig: str, *args: str) -> dict:
-    return json.loads(kubectl(kubeconfig, *args, "-o", "json").stdout)
+def kube_json(kubeconfig: str, *args: str) -> dict[str, Any]:
+    # `Any` because this is whatever the API server returned; the callers index
+    # into it by the field they are asserting on.
+    parsed: dict[str, Any] = json.loads(kubectl(kubeconfig, *args, "-o", "json").stdout)
+    return parsed

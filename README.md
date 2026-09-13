@@ -66,6 +66,22 @@ that produced it, and with a key, because that is the only form
 yourself, and why a rotation is an ordered procedure rather than a flag flip,
 is in [docs/signing.md](docs/signing.md).
 
+## The gate
+
+`pre-commit` gates every commit. Install it once and a commit that fails it
+does not happen:
+
+```bash
+pre-commit install
+pre-commit run -a       # pre-flight the whole tree
+```
+
+It runs ruff, `mypy --strict`, actionlint (which shellchecks every `run:`
+block), hadolint, and the chart render tier below. Two trees are deliberately
+exempt and [.pre-commit-config.yaml](.pre-commit-config.yaml) says why:
+`olares-apps/*/templates/` is Helm, not YAML, and `olares-apps/*/files/` is
+bytes whose hashes packwiz records.
+
 ## Testing
 
 Two tiers, because they cost very different amounts:
