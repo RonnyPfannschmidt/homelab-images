@@ -26,7 +26,7 @@ exclude: |
 repos:
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v5.0.0
+  rev: v6.0.0
   hooks:
   - id: trailing-whitespace
   - id: end-of-file-fixer
@@ -50,7 +50,7 @@ repos:
   - id: ruff-format
 
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.18.2
+  rev: v2.3.1
   hooks:
   - id: mypy
     args: [--strict]
@@ -59,14 +59,14 @@ repos:
       - types-PyYAML
 
 - repo: https://github.com/rhysd/actionlint
-  rev: v1.7.7
+  rev: v1.7.12
   hooks:
   - id: actionlint
     # actionlint runs shellcheck over every `run:` block, which is most of what
     # is worth checking in a repository whose job is two build workflows.
 
 - repo: https://github.com/hadolint/hadolint
-  rev: v2.12.0
+  rev: v2.15.1
   hooks:
   - id: hadolint-docker
     files: Containerfile$
