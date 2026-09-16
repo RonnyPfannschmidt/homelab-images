@@ -1,0 +1,71 @@
+# Nextcloud with the 24 apps the homeserver actually serves, baked in and
+# pinned - the property the NixOS module gave us and a plain `nextcloud` image
+# does not: the app set is part of the image, cannot drift, and moves only when
+# apps.lock moves.
+#
+# Not a bootc image. It is an application container behind the Caddy that
+# already fronts the box, and it is here rather than in the private repository
+# because a public repository builds arm64 for free and publishes without a
+# pull secret.
+
+# Pinned by digest, not by tag: 32.0.8-apache is what the box runs today, and
+# the tag will move under it. This digest is the multi-arch index, so amd64 and
+# arm64 both resolve from the one line.
+FROM docker.io/library/nextcloud:32.0.8-apache@sha256:334f45c2e1b5e24a3af184b2c62a5c43028310115069649c2e63ab3d27f2795c
+
+# exiftool and ffmpeg are what `memories` needs and the base has neither;
+# go-vod it ships itself, per-architecture, inside the app tarball.
+#
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        libimage-exiftool-perl \
+    && rm -rf /var/lib/apt/lists/*
+
+# custom_apps, which the base image already declares in its own apps.config.php
+# and already serves. Nothing downstream has to be told where these are: the
+# image is self-contained and a fresh install comes up with the full app set.
+#
+# The one thing that has to change for that to keep working is the exclude
+# list. The entrypoint rsyncs /usr/src/nextcloud into /var/www/html on every
+# start, and custom_apps is excluded from that sync - so apps baked here would
+# be frozen at whatever the first start wrote, and a newer image would never
+# reach an existing instance. Dropping the exclusion makes the sync authoritative
+# over custom_apps, which is the point of pinning them in the first place.
+#
+# The consequence is deliberate and worth knowing: an app installed through the
+# web UI lands in custom_apps and is removed again on the next container start.
+# The image owns the app set; apps.lock is how it changes.
+RUN sed -i '\#^/custom_apps/$#d' /upgrade.exclude \
+    && ! grep -q custom_apps /upgrade.exclude
+
+COPY apps/nextcloud/apps.lock /tmp/apps.lock
+# Pipe-free on purpose: a pipe here would need `SHELL -o pipefail` for the whole
+# file, and a `sha256sum -c` whose exit status is swallowed is the one failure
+# this step exists to catch.
+RUN set -eu; \
+    mkdir -p /usr/src/nextcloud/custom_apps; \
+    expected=0; \
+    while read -r app version sha url; do \
+        case "$app" in ''|\#*) continue ;; esac; \
+        echo "==> $app $version"; \
+        expected=$((expected + 1)); \
+        curl -fsSL -o /tmp/app.tar.gz "$url"; \
+        printf '%s  %s\n' "$sha" /tmp/app.tar.gz > /tmp/app.sha256; \
+        sha256sum -c /tmp/app.sha256; \
+        tar -xzf /tmp/app.tar.gz -C /usr/src/nextcloud/custom_apps; \
+        test -d "/usr/src/nextcloud/custom_apps/$app" \
+            || { echo "$app: tarball did not unpack to $app/" >&2; exit 1; }; \
+        rm /tmp/app.tar.gz /tmp/app.sha256; \
+    done < /tmp/apps.lock; \
+    rm /tmp/apps.lock; \
+    set -- /usr/src/nextcloud/custom_apps/*/; \
+    test "$#" = "$expected" \
+        || { echo "unpacked $# apps, apps.lock names $expected" >&2; exit 1; }; \
+    chown -R www-data:www-data /usr/src/nextcloud/custom_apps
+
+COPY apps/nextcloud/etc/mpm.conf /etc/apache2/conf-enabled/zzz-mpm.conf
+COPY apps/nextcloud/etc/nextcloud.ini /usr/local/etc/php/conf.d/zzz-nextcloud.ini

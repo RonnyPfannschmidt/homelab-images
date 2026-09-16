@@ -1,7 +1,7 @@
 # homelab-images
 
-Bootable container images and Helm charts for a two-node home cluster — a
-Raspberry Pi 4 and an x86 GPU box — published to `ghcr.io`.
+Bootable container images, application images and Helm charts for a two-node
+home cluster — a Raspberry Pi 4 and an x86 GPU box — published to `ghcr.io`.
 
 Everything here is built from a Fedora bootc base and deployed with **k3s +
 Flux**. That is the point of the repository: it is the app layer of a
@@ -15,6 +15,7 @@ rather than re-written here.
 | | |
 |---|---|
 | `bootc/` | one directory per bootable image; each is a `Containerfile` on a `quay.io/fedora/fedora-bootc` or `fedora-silverblue` base |
+| `apps/` | one directory per application image — ordinary containers, not bootable ones, built for amd64 and arm64 and joined into one manifest list |
 | `olares-apps/` | Helm charts, one per app; upstream charts imported and configured where one exists. The directory keeps its name until the Olares box is reinstalled; see below |
 | `testing/` | chart render checks, and a `kind`-based rehearsal of the real deployment |
 | `trust/` | the cosign verification keys every image carries, and the `policy.json` generated from them |

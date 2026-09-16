@@ -1,0 +1,175 @@
+# Build every application image under apps/ and publish it to ghcr.io.
+#
+# Sibling of build-bootc.yml rather than another matrix entry in it: these are
+# not bootable images, the lint step there does not apply, and they are built
+# for two architectures and joined into one manifest list, which that workflow
+# has no reason to grow.
+
+name: app images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/**
+      - .containerignore
+      - .github/workflows/build-apps.yml
+  pull_request:
+    paths:
+      - apps/**
+      - .containerignore
+      - .github/workflows/build-apps.yml
+  workflow_dispatch:
+    inputs:
+      push_to_registry:
+        description: Push the built images to ghcr.io
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [nextcloud]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out image name and tags
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$owner/${{ matrix.image }}"
+          sha=$(git rev-parse --short HEAD)
+
+          # Per-architecture tags. The manifest job below is what publishes the
+          # names anything actually pulls; these exist so it has something to
+          # join, and so a failed join leaves a usable image behind.
+          primary="$image:sha-$sha-${{ matrix.arch }}"
+
+          push=false
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            push=true
+          elif [ "${{ inputs.push_to_registry }}" = "true" ]; then
+            push=true
+          fi
+
+          {
+            echo "image=$image"
+            echo "primary=$primary"
+            echo "push=$push"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # --pull=false: the base is pinned by digest, so there is nothing to
+      # refresh, and pulling again on every run costs a gigabyte for nothing.
+      - name: Build
+        run: |
+          set -x
+          podman build --pull=false \
+            -t "${{ steps.meta.outputs.primary }}" \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            -f apps/${{ matrix.image }}/Containerfile \
+            .
+
+      # The image is only worth publishing if Nextcloud can see the apps that
+      # are the reason it exists. `occ` needs a database, so this checks what
+      # can be checked without one: the code is where apps_paths will look.
+      - name: Smoke test
+        run: |
+          img=${{ steps.meta.outputs.primary }}
+          expected=$(grep -cvE '^[[:space:]]*(#|$)' apps/${{ matrix.image }}/apps.lock)
+          count=$(podman run --rm --entrypoint sh "$img" \
+            -c 'find /usr/src/nextcloud/custom_apps -maxdepth 1 -mindepth 1 -type d | wc -l')
+          echo "extra apps present: $count, apps.lock names: $expected"
+          test "$count" = "$expected"
+          podman run --rm --entrypoint sh "$img" -c 'exiftool -ver && ffmpeg -version | head -1'
+
+      - name: Push
+        if: steps.meta.outputs.push == 'true'
+        run: podman push "${{ steps.meta.outputs.primary }}"
+
+  manifest:
+    name: ${{ matrix.image }} manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless
+
+    strategy:
+      matrix:
+        image: [nextcloud]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # One name that resolves on both architectures. sha-<commit> is the
+      # immutable one to pin a deployment to; latest moves.
+      - name: Join the per-architecture images
+        id: join
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$owner/${{ matrix.image }}"
+          sha=$(git rev-parse --short HEAD)
+
+          podman manifest create "$image:sha-$sha" \
+            "docker://$image:sha-$sha-amd64" \
+            "docker://$image:sha-$sha-arm64"
+          podman manifest push --digestfile /tmp/digest "$image:sha-$sha" \
+            "docker://$image:sha-$sha"
+          podman manifest push "$image:sha-$sha" "docker://$image:latest"
+
+          echo "digest=$image@$(cat /tmp/digest)" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Same two-signature split as build-bootc.yml, and the same reason: the
+      # keyless one is the provenance record, the keyed one is what a policy
+      # can actually require. Signing the manifest list covers both arches.
+      - name: Sign (keyless)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
+          cosign sign --yes "${{ steps.join.outputs.digest }}"
+
+      - name: Sign (keyed)
+        if: env.COSIGN_PRIVATE_KEY != ''
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${{ steps.join.outputs.digest }}"
