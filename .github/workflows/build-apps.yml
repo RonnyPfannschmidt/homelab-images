@@ -46,6 +46,11 @@ jobs:
       fail-fast: false
       matrix:
         image: [nextcloud]
+        arch: [amd64, arm64]
+        # `include` entries whose keys are all new do not add combinations -
+        # they are merged into the existing ones, in order, so listing arch
+        # only here left a single job that was whichever entry came last. arch
+        # has to be a matrix axis; include only attaches the runner to it.
         include:
           - arch: amd64
             runner: ubuntu-24.04
