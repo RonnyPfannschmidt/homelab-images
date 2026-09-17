@@ -29,18 +29,11 @@ RUN apt-get update \
 # and already serves. Nothing downstream has to be told where these are: the
 # image is self-contained and a fresh install comes up with the full app set.
 #
-# The one thing that has to change for that to keep working is the exclude
-# list. The entrypoint rsyncs /usr/src/nextcloud into /var/www/html on every
-# start, and custom_apps is excluded from that sync - so apps baked here would
-# be frozen at whatever the first start wrote, and a newer image would never
-# reach an existing instance. Dropping the exclusion makes the sync authoritative
-# over custom_apps, which is the point of pinning them in the first place.
-#
-# The consequence is deliberate and worth knowing: an app installed through the
-# web UI lands in custom_apps and is removed again on the next container start.
-# The image owns the app set; apps.lock is how it changes.
-RUN sed -i '\#^/custom_apps/$#d' /upgrade.exclude \
-    && ! grep -q custom_apps /upgrade.exclude
+# There is no exclude list to edit any more. The rsync this used to fight is
+# gone with the entrypoint - see the webroot step below - so custom_apps is
+# simply part of the read-only layer, and an app installed through the web UI
+# cannot land there at all. The image owns the app set; apps.lock is how it
+# changes.
 
 COPY apps/nextcloud/apps.lock /tmp/apps.lock
 # Pipe-free on purpose: a pipe here would need `SHELL -o pipefail` for the whole
@@ -64,22 +57,77 @@ RUN set -eu; \
     rm /tmp/apps.lock; \
     set -- /usr/src/nextcloud/custom_apps/*/; \
     test "$#" = "$expected" \
-        || { echo "unpacked $# apps, apps.lock names $expected" >&2; exit 1; }; \
-    chown -R www-data:www-data /usr/src/nextcloud/custom_apps
+        || { echo "unpacked $# apps, apps.lock names $expected" >&2; exit 1; }
+
+# The webroot, baked and immutable, and the step this image exists for.
+#
+# The base image ships an EMPTY /var/www/html, declares it a VOLUME, and keeps
+# the real 2.0 GB at /usr/src/nextcloud for its entrypoint to rsync across on
+# every start. Measured 2026-09-17, that arrangement has no good setting:
+#
+#   anonymous volume + --rm   a genuine 2.0 GB copy on every start. It is not
+#                             reflinked even on btrfs - the image blob and the
+#                             volume copy occupy different physical extents.
+#   named volume              populated from the image exactly once, on first
+#                             start, and never re-synced. Content deleted from
+#                             it stays deleted; a NEWER image's files never
+#                             arrive. The webroot silently freezes.
+#
+# A VOLUME an ancestor declared cannot be un-declared, so the move is to stop
+# using that path. /var/www/nextcloud is ours and ordinary: the code is read
+# straight out of the layer, an image bump replaces it because that is what a
+# layer does, and nothing is copied at start.
+#
+# /var/www/html stays behind as an empty directory. podman still creates an
+# empty anonymous volume over it on every run; it costs nothing and nothing
+# reads it.
+#
+# The tree is root-owned and unwritable to www-data on purpose. config/ and
+# data/ are mount points - a deployment binds real directories over them - so a
+# container started without those mounts fails loudly instead of quietly
+# writing state into a layer that is about to be thrown away.
+# config/ is emptied rather than left holding upstream's templates. They are
+# shadowed by the bind mount in every real deployment, so keeping them would
+# only mean the image behaves differently when run without one - apcu as the
+# local cache, a different apps_paths - which is the kind of difference that is
+# discovered in production. The instance's config.php and its overrides are the
+# only configuration this image reads.
+#
+# hadolint ignore=SC2016
+RUN set -eu; \
+    mv /usr/src/nextcloud /var/www/nextcloud; \
+    rm -f /upgrade.exclude /entrypoint.sh /cron.sh; \
+    rm -rf /var/www/nextcloud/config; \
+    mkdir -p /var/www/nextcloud/config /var/www/nextcloud/data; \
+    chown -R root:root /var/www/nextcloud; \
+    chmod -R go-w /var/www/nextcloud; \
+    test ! -e /var/www/nextcloud/config/config.php; \
+    test ! -e /entrypoint.sh; \
+    php -r 'require "/var/www/nextcloud/version.php"; echo implode(".", $OC_Version), "\n";'
+
+# DocumentRoot, and the front-controller rewrite rules that used to be written
+# into .htaccess at start. See the file itself - the ordering rule in it is the
+# one thing here that is not obvious.
+COPY apps/nextcloud/etc/nextcloud-site.conf /etc/apache2/sites-available/nextcloud.conf
+RUN set -eu; \
+    a2dissite 000-default; \
+    a2ensite nextcloud; \
+    a2enmod rewrite headers env dir mime setenvif; \
+    apache2ctl configtest
 
 COPY apps/nextcloud/etc/mpm.conf /etc/apache2/conf-enabled/zzz-mpm.conf
 COPY apps/nextcloud/etc/nextcloud.ini /usr/local/etc/php/conf.d/zzz-nextcloud.ini
 
-# The role dispatcher, and the image's entrypoint from here on. `web`, `cron`
-# and `occ` are named roles; anything else is handed to the upstream entrypoint
-# untouched. The default keeps a bare `podman run` of this image serving, which
-# is what the base image does.
+# The role dispatcher, and this image's only start-up logic - the upstream
+# entrypoint is deleted above, not merely bypassed, so nothing can fall back to
+# it by accident. `web`, `cron`, `occ`, `upgrade` and `versions` are the roles;
+# anything else runs as given.
 #
-# The reason this exists rather than each quadlet spelling out its own command:
-# the upstream entrypoint populates and upgrades /var/www/html only when its
-# first argument starts with "apache", is php-fpm, or NEXTCLOUD_UPDATE is set.
-# A cron container must not trigger that, a web container must, and a command
-# line that gets it wrong fails silently in both directions.
+# `upgrade` being a role of its own is the point. Upstream migrates the database
+# from inside the web container's start, which means an image bump and an
+# irreversible schema change are one event and the rollback window is zero.
+# Here the new code starts against the old database, Nextcloud says so, and the
+# migration is a separate thing someone runs.
 COPY --chmod=755 apps/nextcloud/bin/nextcloud-role /usr/local/bin/nextcloud-role
 ENTRYPOINT ["/usr/local/bin/nextcloud-role"]
 CMD ["web"]

@@ -1,21 +1,79 @@
 #!/bin/sh
-# Role dispatcher.
+# Role dispatcher, and the whole of this image's start-up logic.
 #
-# One image runs three jobs against one webroot and one database, and which job
-# it is has to be a word rather than a bare command line - because the upstream
-# entrypoint decides whether to populate and upgrade /var/www/html by
-# pattern-matching its own first argument, and getting that wrong is silent.
-# Naming the roles puts that knowledge in the image instead of in every quadlet
-# that uses it.
+# The upstream entrypoint is not called any more and nothing here rsyncs. The
+# webroot is baked at /var/www/nextcloud - a path the base image never declared
+# as a VOLUME - and is read-only at runtime. What upstream's entrypoint did for
+# a living, and what happened to each piece:
+#
+#   rsync /usr/src/nextcloud -> /var/www/html   gone; the layer is the webroot
+#   populate config/ when empty                 gone; config/ is mounted in
+#   populate data/ when empty                   gone; data/ is mounted in
+#   version compare and refuse a downgrade      here, in check_versions
+#   `occ upgrade` on a version bump             the `upgrade` role, run by hand
+#   occ maintenance:update:htaccess             gone; the rules are in the vhost
+#   REDIS_HOST -> php session handler           gone; never used here
+#
+# The last of those is the change the operator has to know about: **an image
+# bump no longer migrates the database on its own.** The new code starts, the
+# database stays where it was, Nextcloud serves its "upgrade required" page,
+# and reverting the image digest is still a clean rollback. Running `upgrade`
+# is the step that stops being reversible.
 set -eu
 
-webroot=/var/www/html
-init_lock="$webroot/nextcloud-init-sync.lock"
+webroot=/var/www/nextcloud
 
-# The upstream entrypoint drops to www-data only on its apache and php-fpm
-# paths; everything else it execs as whatever the container was started as. Both
-# cron.php and occ refuse to run as a user that does not own config/config.php,
-# so without this a root container fails on every single tick.
+# The version the code in this image is, and the version the instance's
+# config.php says the database is at. Read the same way upstream reads them, so
+# the comparison is the same comparison.
+code_version() {
+    php -r 'require getenv("webroot") . "/version.php"; echo implode(".", $OC_Version);'
+}
+
+instance_version() {
+    php -r '$CONFIG = []; @include getenv("webroot") . "/config/config.php"; echo $CONFIG["version"] ?? "0.0.0.0";'
+}
+
+# Sort-based, like upstream's version_greater: dotted numeric fields, highest
+# last. `sort -V` would do it too but is not in every base.
+version_greater() {
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | head -n 1)" != "$1" ]
+}
+
+# Print where the two versions stand, and stop the container outright if the
+# code is older than the database. Nextcloud refuses that case by itself, but
+# it does so per request, as a 500 in a loop; failing the unit instead makes
+# `systemctl status nextcloud` say what is wrong.
+check_versions() {
+    code="$(code_version)"
+    instance="$(instance_version)"
+
+    if [ "$instance" = "0.0.0.0" ]; then
+        echo "nextcloud: image $code, no instance version in config.php - not installed"
+        return 0
+    fi
+
+    if version_greater "$instance" "$code"; then
+        echo "nextcloud: image $code is OLDER than the instance $instance." >&2
+        echo "nextcloud: downgrading is not supported; migrations do not run backwards." >&2
+        echo "nextcloud: restore the database from before the upgrade, or use the newer image." >&2
+        exit 1
+    fi
+
+    if version_greater "$code" "$instance"; then
+        echo "nextcloud: image $code is NEWER than the instance $instance."
+        echo "nextcloud: the database has not been migrated. Nextcloud will refuse requests"
+        echo "nextcloud: until \`nextcloud-role upgrade\` runs. Reverting the image digest"
+        echo "nextcloud: right now is still a clean rollback; after the upgrade it is not."
+        return 0
+    fi
+
+    echo "nextcloud: image and instance both at $code"
+}
+
+# occ and cron.php both refuse to run as a user that does not own
+# config/config.php, and this container starts as root so Apache can bind :80
+# and drop to www-data itself.
 as_web_user() {
     if [ "$(id -u)" = 0 ]; then
         exec setpriv --reuid www-data --regid www-data --init-groups "$@"
@@ -23,47 +81,66 @@ as_web_user() {
     exec "$@"
 }
 
-# Wait out any webroot sync in progress. The entrypoint holds this lock while it
-# rsyncs /usr/src/nextcloud into place and runs `occ upgrade`, and a job reading
-# the webroot inside that window sees a half-written tree. Upstream's own cron
-# container does not take the lock and simply has the race.
-wait_for_init() {
-    if [ -e "$init_lock" ]; then
-        flock -w 900 "$init_lock" true
-    fi
-}
+export webroot
 
 role="${1:-web}"
 shift || true
 
 case "$role" in
 web)
-    # `apache2-foreground` is load-bearing and must not be renamed for tidiness:
-    # the entrypoint runs its install and upgrade only when the first argument
-    # starts with "apache", equals php-fpm, or NEXTCLOUD_UPDATE is set. Any
-    # other word and the webroot is never populated and never upgraded, with no
-    # error anywhere.
-    exec /entrypoint.sh apache2-foreground "$@"
+    check_versions
+    exec apache2-foreground "$@"
     ;;
 cron)
-    # A tick that arrives before the web role has populated the webroot is not a
-    # failure, it is early - the next one is five minutes away and the volume
-    # will be there. Exiting non-zero here would mean a failed unit on every
-    # boot that happened to line up.
-    if [ ! -f "$webroot/version.php" ]; then
-        echo "cron: webroot not initialised yet - the web role populates it; nothing to do"
-        exit 0
-    fi
-    wait_for_init
-    as_web_user /entrypoint.sh php -f "$webroot/cron.php" "$@"
+    # Unlike the rsync era there is no window in which the webroot is
+    # half-written, so there is no init lock to wait on any more. A tick that
+    # arrives while the database is behind the code is still not a failure:
+    # cron.php honours maintenance mode and Nextcloud sets it during upgrade.
+    as_web_user php -f "$webroot/cron.php" "$@"
     ;;
 occ)
-    wait_for_init
-    as_web_user /entrypoint.sh php "$webroot/occ" "$@"
+    as_web_user php "$webroot/occ" "$@"
+    ;;
+notify-push)
+    # The push server, whose binary the notify_push app ships per architecture
+    # and which is therefore already baked in beside it. A role rather than a
+    # separate image so that the server and the app it serves can never be
+    # different versions - which is the one way this component fails.
+    #
+    # It takes the Nextcloud config file and reads the database connection out
+    # of it. **It reads config.php and nothing else** - not the `*.config.php`
+    # overrides Nextcloud itself merges afterwards. Measured: against this
+    # instance it found `redis.host` in config.php, which is a unix socket path
+    # left over from the NixOS era, and died with "Failed to test redis access:
+    # No such file or directory". So the caller passes `--redis-url` and
+    # `--nextcloud-url`, and nothing here guesses them.
+    arch="$(uname -m)"
+    push="$webroot/custom_apps/notify_push/bin/$arch/notify_push"
+    if [ ! -x "$push" ]; then
+        echo "notify-push: no binary for $arch at $push" >&2
+        echo "notify-push: the app ships aarch64, armv7 and x86_64" >&2
+        exit 1
+    fi
+    as_web_user "$push" "$@" "$webroot/config/config.php"
+    ;;
+upgrade)
+    # The irreversible step, on its own, run deliberately. Nothing schedules
+    # this and nothing calls it on a container start - that is the entire point
+    # of splitting it out.
+    #
+    # It does NOT take a backup. pg_dump is not in this image and putting it
+    # here would make the image know about the database's flavour; the dump
+    # belongs to whatever runs this.
+    check_versions
+    as_web_user php "$webroot/occ" upgrade "$@"
+    ;;
+versions)
+    check_versions
     ;;
 *)
-    # Anything else goes to the upstream entrypoint untouched, so this image
-    # stays a drop-in for the base image it is built from.
-    exec /entrypoint.sh "$role" "$@"
+    # Anything else runs as given, so `podman run <image> php -v` still works.
+    # Deliberately not handed to /entrypoint.sh: that script's whole job was to
+    # populate /var/www/html, which this image does not use.
+    exec "$role" "$@"
     ;;
 esac

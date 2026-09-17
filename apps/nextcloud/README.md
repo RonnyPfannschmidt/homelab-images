@@ -30,25 +30,73 @@ An app moves when someone moves it:
 
 The build reads `apps.lock` and nothing else. `pin_apps.py` never runs in CI.
 
-## The image owns the app set
+## The webroot is baked, and there is no rsync
 
-The base image's entrypoint rsyncs `/usr/src/nextcloud` into `/var/www/html` on
-every start, and ships `custom_apps` in its exclude list. This image takes it
-out of that list, because with it in, apps baked into the image would freeze at
-whatever the first start wrote and a newer image would never reach an existing
-instance — silently, which is the worst version of it.
+The base image ships an **empty** `/var/www/html`, declares it a `VOLUME`, and
+keeps the real 2.0 GB at `/usr/src/nextcloud` for its entrypoint to rsync
+across on every start. Measured, neither setting of that works once the content
+is baked: an anonymous volume pays a genuine 2.0 GB copy per start (it is not
+reflinked, even on btrfs), and a named volume is populated **once** and never
+re-synced, so a newer image never reaches it.
 
-The consequence is deliberate: **an app installed through the web UI is removed
-again on the next container start.** It lands in `custom_apps`, and the sync
-makes `custom_apps` match the image. Experimenting still works; it just does not
-survive, and `apps.lock` is how something is meant to stay.
+A `VOLUME` an ancestor declared cannot be un-declared, so this image stops using
+that path. The webroot is **`/var/www/nextcloud`**, served read-only straight
+out of the image layer. `/usr/src/nextcloud`, `/entrypoint.sh`, `/cron.sh` and
+`/upgrade.exclude` are deleted, not bypassed.
+
+Consequences worth knowing:
+
+- **`config/` and `data/` are mount points.** The image does not populate them
+  and has no fallback if they are missing — a container started without them
+  fails instead of quietly writing state into a layer about to be discarded.
+  The config directory is deliberately emptied of upstream's `*.config.php`
+  templates, so the image cannot behave differently from the deployment.
+- **An app cannot be installed through the web UI at all.** There is no
+  writable apps path any more. Previously the install worked and the next
+  start's rsync removed it. `apps.lock` is the only way an app moves.
+- **The front-controller rewrite rules live in the image's vhost**, not in
+  `.htaccess`, which is read-only and part of the signed core.
+  `RewriteOptions Inherit` is what keeps the shipped `.htaccess` rules ahead of
+  them; without it Apache discards one set or the other.
+
+## The upgrade is a role, not a side effect of starting
+
+Upstream runs `occ upgrade` from inside the web container's start, which makes
+an image bump and an irreversible schema migration the same event — and
+afterwards the old image refuses to start, so the rollback window is zero.
+
+Here they are separate:
+
+```
+nextcloud-role web        starts; says where code and database versions stand;
+                          serves Nextcloud's "upgrade required" page if behind
+nextcloud-role upgrade    runs occ upgrade. This is the irreversible step.
+nextcloud-role versions   prints the comparison and exits
+nextcloud-role cron       one cron.php run, as www-data
+nextcloud-role occ …      occ, as www-data
+nextcloud-role notify-push --redis-url … --nextcloud-url …
+                          the push server, from the binary the app ships
+```
+
+`notify-push` is a role rather than another image because the server and the
+app have to be the same version, and baking the app already bakes the binary.
+It reads the database connection from **`config.php` only** — not from the
+`*.config.php` overrides Nextcloud merges afterwards — so `--redis-url` and
+`--nextcloud-url` are the caller's job and the role guesses neither.
+
+`web` refuses to start outright if the code is *older* than the database, where
+Nextcloud would otherwise 500 in a loop.
+
+**Across a major version, move `apps.lock` and the base digest in the same
+commit.** `occ upgrade` disables every app whose `info.xml` caps below the new
+server version and does not re-enable them.
 
 ## What it does not carry
 
 Configuration. `config.php` belongs to the instance, and so does every path,
 hostname and credential in it.
 
-Three apps are enabled in the homeserver's database with no backend running,
-and this image does not add one: `notify_push` (the push server), `whiteboard`
-(its websocket server), `app_api` (a deploy daemon). They are inert on the
-NixOS instance too. Whether they get one is a deployment decision.
+`whiteboard` and `app_api` are enabled in the homeserver's database with no
+backend running, and this image does not add one — the whiteboard websocket
+server is its own upstream image, pinned to the same version as the app.
+`notify_push` used to be on that list and is not any more: see the role above.
