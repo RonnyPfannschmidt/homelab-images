@@ -1,0 +1,69 @@
+#!/bin/sh
+# Role dispatcher.
+#
+# One image runs three jobs against one webroot and one database, and which job
+# it is has to be a word rather than a bare command line - because the upstream
+# entrypoint decides whether to populate and upgrade /var/www/html by
+# pattern-matching its own first argument, and getting that wrong is silent.
+# Naming the roles puts that knowledge in the image instead of in every quadlet
+# that uses it.
+set -eu
+
+webroot=/var/www/html
+init_lock="$webroot/nextcloud-init-sync.lock"
+
+# The upstream entrypoint drops to www-data only on its apache and php-fpm
+# paths; everything else it execs as whatever the container was started as. Both
+# cron.php and occ refuse to run as a user that does not own config/config.php,
+# so without this a root container fails on every single tick.
+as_web_user() {
+    if [ "$(id -u)" = 0 ]; then
+        exec setpriv --reuid www-data --regid www-data --init-groups "$@"
+    fi
+    exec "$@"
+}
+
+# Wait out any webroot sync in progress. The entrypoint holds this lock while it
+# rsyncs /usr/src/nextcloud into place and runs `occ upgrade`, and a job reading
+# the webroot inside that window sees a half-written tree. Upstream's own cron
+# container does not take the lock and simply has the race.
+wait_for_init() {
+    if [ -e "$init_lock" ]; then
+        flock -w 900 "$init_lock" true
+    fi
+}
+
+role="${1:-web}"
+shift || true
+
+case "$role" in
+web)
+    # `apache2-foreground` is load-bearing and must not be renamed for tidiness:
+    # the entrypoint runs its install and upgrade only when the first argument
+    # starts with "apache", equals php-fpm, or NEXTCLOUD_UPDATE is set. Any
+    # other word and the webroot is never populated and never upgraded, with no
+    # error anywhere.
+    exec /entrypoint.sh apache2-foreground "$@"
+    ;;
+cron)
+    # A tick that arrives before the web role has populated the webroot is not a
+    # failure, it is early - the next one is five minutes away and the volume
+    # will be there. Exiting non-zero here would mean a failed unit on every
+    # boot that happened to line up.
+    if [ ! -f "$webroot/version.php" ]; then
+        echo "cron: webroot not initialised yet - the web role populates it; nothing to do"
+        exit 0
+    fi
+    wait_for_init
+    as_web_user /entrypoint.sh php -f "$webroot/cron.php" "$@"
+    ;;
+occ)
+    wait_for_init
+    as_web_user /entrypoint.sh php "$webroot/occ" "$@"
+    ;;
+*)
+    # Anything else goes to the upstream entrypoint untouched, so this image
+    # stays a drop-in for the base image it is built from.
+    exec /entrypoint.sh "$role" "$@"
+    ;;
+esac

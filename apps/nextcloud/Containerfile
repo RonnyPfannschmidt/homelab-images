@@ -69,3 +69,17 @@ RUN set -eu; \
 
 COPY apps/nextcloud/etc/mpm.conf /etc/apache2/conf-enabled/zzz-mpm.conf
 COPY apps/nextcloud/etc/nextcloud.ini /usr/local/etc/php/conf.d/zzz-nextcloud.ini
+
+# The role dispatcher, and the image's entrypoint from here on. `web`, `cron`
+# and `occ` are named roles; anything else is handed to the upstream entrypoint
+# untouched. The default keeps a bare `podman run` of this image serving, which
+# is what the base image does.
+#
+# The reason this exists rather than each quadlet spelling out its own command:
+# the upstream entrypoint populates and upgrades /var/www/html only when its
+# first argument starts with "apache", is php-fpm, or NEXTCLOUD_UPDATE is set.
+# A cron container must not trigger that, a web container must, and a command
+# line that gets it wrong fails silently in both directions.
+COPY --chmod=755 apps/nextcloud/bin/nextcloud-role /usr/local/bin/nextcloud-role
+ENTRYPOINT ["/usr/local/bin/nextcloud-role"]
+CMD ["web"]
