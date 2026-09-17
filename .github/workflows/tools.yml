@@ -1,0 +1,191 @@
+# PROPOSAL - not enabled by anyone but you. Committing this file is what turns
+# it on; nothing here has been pushed or run.
+#
+# It exists because tools/nextcloud-local-manifest/ gets exactly one attempt on
+# the machine it is for. That machine is not available, is not ours, and its
+# owner cannot debug a stack trace - so the Windows-only paths have to be
+# executed somewhere before they are executed there. `windows-latest` runs
+# Windows PowerShell 5.1, which is the interpreter that will actually run it
+# and the one whose BOM-less-script encoding rule and Compress-Archive
+# behaviour differ from pwsh 7.
+#
+# The check that matters is the last one: the collector and the shell script
+# are two independent implementations of one file format, and the only useful
+# assertion is that they agree byte for byte over a tree with umlauts in it.
+
+name: tools
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/**
+      - .github/workflows/tools.yml
+  pull_request:
+    paths:
+      - tools/**
+      - .github/workflows/tools.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  powershell:
+    name: collector on Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $found = Invoke-ScriptAnalyzer -Path tools/nextcloud-local-manifest/nextcloud-local-manifest.ps1 `
+            -Severity Error,Warning
+          $found | Format-Table -AutoSize | Out-String | Write-Host
+          if ($found | Where-Object { $_.Severity -eq 'Error' }) { exit 1 }
+
+      # The file must stay ASCII. Windows PowerShell 5.1 reads a .ps1 with no
+      # byte-order mark as the system ANSI codepage, so a non-ASCII byte in the
+      # source is mojibake on a German machine - and the machine this runs on
+      # is a German machine. Checked rather than trusted, because the failure
+      # only shows up on her screen.
+      - name: The script is ASCII and carries no BOM
+        shell: powershell
+        run: |
+          $path = 'tools/nextcloud-local-manifest/nextcloud-local-manifest.ps1'
+          $bytes = [System.IO.File]::ReadAllBytes($path)
+          $high = 0..($bytes.Length - 1) | Where-Object { $bytes[$_] -gt 127 }
+          if ($high) {
+            foreach ($offset in $high | Select-Object -First 20) {
+              Write-Host "non-ASCII byte 0x$('{0:x2}' -f $bytes[$offset]) at offset $offset"
+            }
+            exit 1
+          }
+          Write-Host "$($bytes.Length) bytes, all ASCII"
+
+      # Umlauts, an eszett, a space in a path, and a name in NFD - the four
+      # shapes in this data that break a naive implementation.
+      - name: Build a tree and collect it
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'tree'
+          $nfd = [char]0x0061 + [char]0x0308   # a + combining diaeresis
+          $dirs = @(
+            [char]0x00C4 + 'hre',
+            'B' + [char]0x00FC + 'ro\K' + [char]0x00FC + 'che',
+            'Stra' + [char]0x00DF + 'e',
+            'a b',
+            "NFD-$nfd",
+            'zzz'
+          )
+          foreach ($dir in $dirs) {
+            $full = Join-Path $root $dir
+            New-Item -ItemType Directory -Path $full -Force | Out-Null
+            1..50 | ForEach-Object {
+              $file = Join-Path $full ("Datei-" + [char]0x00F6 + "-$_.txt")
+              [System.IO.File]::WriteAllBytes($file, (New-Object byte[] $_))
+              [System.IO.File]::SetLastWriteTimeUtc($file, [DateTime]::new(2024, 3, 5, 6, 7, 8, [DateTimeKind]::Utc))
+            }
+          }
+
+          # -File under powershell.exe, which is 5.1: the same interpreter and
+          # the same invocation the instructions give her.
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools/nextcloud-local-manifest/nextcloud-local-manifest.ps1 `
+            -Path $root -OutputDirectory $env:RUNNER_TEMP -NoZip -NoPause
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: The output is UTF-8 with no BOM, LF endings, byte sorted
+        shell: powershell
+        run: |
+          $manifest = Get-ChildItem -Path $env:RUNNER_TEMP -Recurse -Filter 'manifest-*.tsv' |
+            Select-Object -First 1
+          if (-not $manifest) { throw 'no manifest was produced' }
+          $bytes = [System.IO.File]::ReadAllBytes($manifest.FullName)
+
+          if ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            throw 'manifest starts with a UTF-8 BOM'
+          }
+          if ($bytes -contains 0x0D) { throw 'manifest contains a CR' }
+
+          # Byte order, checked the way the server checks it: decode each line
+          # through Latin-1 so an ordinal comparison is a comparison of the
+          # UTF-8 bytes, then assert the file is already in that order.
+          $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $lines = [System.IO.File]::ReadAllLines($manifest.FullName, $utf8)
+          $keys = $lines | ForEach-Object { $latin1.GetString($utf8.GetBytes($_)) }
+          $sorted = [string[]] $keys.Clone()
+          [Array]::Sort($sorted, [StringComparer]::Ordinal)
+          if (Compare-Object $keys $sorted -SyncWindow 0) { throw 'manifest is not in byte order' }
+
+          Write-Host "$($lines.Count) records, UTF-8 without BOM, LF, byte sorted"
+          "MANIFEST=$($manifest.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-manifest
+          path: ${{ env.MANIFEST }}
+
+  shell:
+    name: server side
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck -s sh tools/nextcloud-local-manifest/*.sh
+
+      # The real assertion. Build the same tree the Windows job builds, run the
+      # shell implementation over it, and compare with the manifest that job
+      # produced. Two implementations of one format agreeing on nothing but
+      # ASCII would prove nothing, which is why the tree is all umlauts.
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-manifest
+          path: from-windows
+
+      - name: Both implementations produce the same bytes
+        run: |
+          root=$RUNNER_TEMP/tree
+          for dir in 'Ähre' 'Büro/Küche' 'Straße' 'a b' "NFD-$(printf 'a\xcc\x88')" 'zzz'; do
+            mkdir -p "$root/$dir"
+            for i in $(seq 1 50); do
+              file="$root/$dir/Datei-ö-$i.txt"
+              head -c "$i" /dev/zero > "$file"
+              touch -d '2024-03-05T06:07:08Z' "$file"
+            done
+          done
+
+          tools/nextcloud-local-manifest/server-manifest.sh "$root" > server.tsv
+          windows=$(find from-windows -name 'manifest-*.tsv' | head -1)
+
+          if cmp -s server.tsv "$windows"; then
+            echo "byte-identical: $(wc -l < server.tsv) records"
+          else
+            echo "::error::the two implementations disagree"
+            diff -u server.tsv "$windows" | head -40
+            exit 1
+          fi
+
+      - name: The comparison script splits a known difference correctly
+        run: |
+          root=$RUNNER_TEMP/tree
+          printf 'nur-am-server' > "$root/Büro/Küche/fehlt-lokal.txt"
+          touch -d '2024-03-05T06:07:08Z' "$root/Büro/Küche/fehlt-lokal.txt"
+          tools/nextcloud-local-manifest/server-manifest.sh "$root" > server2.tsv
+
+          windows=$(find from-windows -name 'manifest-*.tsv' | head -1)
+          tools/nextcloud-local-manifest/compare-manifests.sh server2.tsv "$windows" out/
+
+          test "$(cat out/only-on-server.tsv)" = 'Büro/Küche/fehlt-lokal.txt'
+          test ! -s out/only-on-client.tsv
+          test ! -s out/differing.tsv
+          echo "the one planted difference is the only one found"
