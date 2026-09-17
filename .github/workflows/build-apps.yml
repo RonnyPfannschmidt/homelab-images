@@ -111,10 +111,33 @@ jobs:
           img=${{ steps.meta.outputs.primary }}
           expected=$(grep -cvE '^[[:space:]]*(#|$)' apps/${{ matrix.image }}/apps.lock)
           count=$(podman run --rm --entrypoint sh "$img" \
-            -c 'find /usr/src/nextcloud/custom_apps -maxdepth 1 -mindepth 1 -type d | wc -l')
+            -c 'find /var/www/nextcloud/custom_apps -maxdepth 1 -mindepth 1 -type d | wc -l')
           echo "extra apps present: $count, apps.lock names: $expected"
           test "$count" = "$expected"
           podman run --rm --entrypoint sh "$img" -c 'exiftool -ver && ffmpeg -version | head -1'
+
+          # The webroot is baked, not rsynced. These four are the properties
+          # that arrangement depends on, and each of them has a silent failure
+          # mode: a resurrected /usr/src/nextcloud would mean a base image
+          # bump quietly went back to the rsync layout, a writable webroot
+          # would let a web-UI app install appear to work, and a missing vhost
+          # would serve the base image's empty /var/www/html with no error.
+          podman run --rm --entrypoint sh "$img" -c '
+            set -eu
+            test ! -e /usr/src/nextcloud
+            test ! -e /entrypoint.sh
+            test -f /var/www/nextcloud/version.php
+            ! setpriv --reuid www-data --regid www-data --init-groups sh -c "test -w /var/www/nextcloud"
+            grep -q "DocumentRoot /var/www/nextcloud" /etc/apache2/sites-enabled/nextcloud.conf
+            grep -q "RewriteOptions Inherit" /etc/apache2/sites-enabled/nextcloud.conf
+            apache2ctl configtest
+          '
+
+          # Every role resolves. `versions` runs the same version comparison
+          # the web role gates on, against an uninstalled config, so it also
+          # proves the role script parses.
+          podman run --rm "$img" versions
+          podman run --rm "$img" notify-push --version
 
       - name: Push
         if: steps.meta.outputs.push == 'true'
