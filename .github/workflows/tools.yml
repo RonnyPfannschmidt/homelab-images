@@ -40,7 +40,7 @@ jobs:
     name: collector on Windows PowerShell 5.1
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Lint
         shell: powershell
@@ -129,7 +129,7 @@ jobs:
           Write-Host "$($lines.Count) records, UTF-8 without BOM, LF, byte sorted"
           "MANIFEST=$($manifest.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-manifest
           path: ${{ env.MANIFEST }}
@@ -138,7 +138,7 @@ jobs:
     name: server side
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: shellcheck
         run: shellcheck -s sh tools/nextcloud-local-manifest/*.sh
@@ -147,7 +147,7 @@ jobs:
       # shell implementation over it, and compare with the manifest that job
       # produced. Two implementations of one format agreeing on nothing but
       # ASCII would prove nothing, which is why the tree is all umlauts.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: windows-manifest
           path: from-windows

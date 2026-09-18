@@ -39,9 +39,9 @@ jobs:
     name: render, validate, check trust
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: astral-sh/setup-uv@v10.1.0
 
       - name: Install kubeconform
         run: |
@@ -60,14 +60,14 @@ jobs:
     # Not gated on `render`: a chart that fails to lint will fail here too, and
     # running them in parallel puts both answers in front of you at once.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The Flux tier pins a GitRepository to the commit under test and
           # checks it is reachable on a remote, which needs more than a shallow
           # single-commit checkout to verify.
           fetch-depth: 0
-      - uses: azure/setup-helm@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: azure/setup-helm@v5
+      - uses: astral-sh/setup-uv@v10.1.0
       - uses: helm/kind-action@v1
         with:
           version: v0.33.0
