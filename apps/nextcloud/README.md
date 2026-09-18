@@ -1,6 +1,6 @@
 # nextcloud
 
-Nextcloud 32.0.8 with the 24 apps the homeserver serves, baked in and pinned.
+Nextcloud 32.0.8 with the 9 apps the homeserver serves, baked in and pinned.
 
 `ghcr.io/ronnypfannschmidt/nextcloud:sha-<commit>` — amd64 and arm64 in one
 manifest list. Pin a deployment to a `sha-` tag; `latest` moves.
@@ -17,14 +17,14 @@ Nothing here resolves at build time:
   [Containerfile](Containerfile) — `32.0.8-apache` is what the NixOS instance
   runs, and the tag will move under it;
 - every **app by version and sha256**, in [apps.lock](apps.lock), at the
-  versions that instance served on 2026-09-16. The first image is the same app
-  set, not a newer one.
+  versions that instance served on 2026-09-16, minus the fifteen two review
+  passes dropped — `apps.lock`'s own header says which and why.
 
 An app moves when someone moves it:
 
 ```
 ./pin_apps.py --available            # what the app store has that is newer
-./pin_apps.py --set memories=7.8.2   # repin one, rewriting apps.lock
+./pin_apps.py --set calendar=6.2.3   # repin one, rewriting apps.lock
 ./pin_apps.py --check                # re-download every pin, verify every hash
 ```
 
@@ -96,7 +96,19 @@ server version and does not re-enable them.
 Configuration. `config.php` belongs to the instance, and so does every path,
 hostname and credential in it.
 
-`whiteboard` and `app_api` are enabled in the homeserver's database with no
-backend running, and this image does not add one — the whiteboard websocket
-server is its own upstream image, pinned to the same version as the app.
-`notify_push` used to be on that list and is not any more: see the role above.
+A backend, where an app needs one. `richdocuments` talks to a Collabora
+container the deployment runs, and this image does not bake it. `notify_push`
+used to be on that list and is not any more: see the role above. `whiteboard`
+was the third, with a websocket server of its own; it is gone as of
+2026-09-18, and its container and podman secret go with it.
+
+An app baked in here with no backend configured is the failure mode to watch
+for, because nothing reports it and the app looks installed either way. Three
+have now been dropped for exactly that: `onlyoffice` sat enabled for years with
+no `DocumentServerUrl` at all, behind the Collabora that was actually serving;
+`integration_paperless` had no server URL or token; `sociallogin` was fully
+configured with OAuth providers and had never carried a single login.
+
+The lesson those three share is that *enabled* says nothing. The only reliable
+test is whether the app's own tables and configuration hold anything — which is
+a question for the instance, not for this file.

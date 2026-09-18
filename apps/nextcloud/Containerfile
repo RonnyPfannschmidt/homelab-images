@@ -1,4 +1,4 @@
-# Nextcloud with the 24 apps the homeserver actually serves, baked in and
+# Nextcloud with the 9 apps the homeserver actually serves, baked in and
 # pinned - the property the NixOS module gave us and a plain `nextcloud` image
 # does not: the app set is part of the image, cannot drift, and moves only when
 # apps.lock moves.

@@ -4,33 +4,51 @@
 # it with `while read`, in a base image that has no Python. pin_apps.py is what
 # rewrites it; nothing generates it during a build.
 #
-# Versions are the ones the NixOS instance served on 2026-09-16, so the first
-# image is the same app set, not a newer one. Moving any of them is an edit
-# here and a commit - which is the point.
+# Versions are the ones the NixOS instance served on 2026-09-16. Moving any of
+# them is an edit here and a commit - which is the point.
+#
+# Fifteen of that instance's apps are deliberately absent, dropped in two
+# passes after measuring what each one actually held.
+#
+# 2026-09-17, seven: forms, cospend and tables held data nobody had touched
+# since 2023-2025; news, polls and files_retention had none and no
+# configuration; onlyoffice was a second office suite with no document server
+# configured at all, behind the Collabora that actually serves.
+#
+# 2026-09-18, eight more. integration_paperless and sociallogin were the
+# onlyoffice shape again - installed, enabled, wired to nothing: paperless had
+# no server URL or token, and sociallogin was fully configured with OAuth
+# providers and had zero rows in oc_sociallogin_connect, so not one login ever
+# came through it. whiteboard had a single .whiteboard file to show for a
+# container, a podman secret and a slice of nextcloud-setup. collectives, deck
+# and tasks lost to the Obsidian vault, which does the same job better: deck
+# was 11 cards of which 6 were Nextcloud's own German sample data, duplicated
+# across two boards both named "Persoenlich"; tasks was 29 VTODOs last touched
+# 2025-08; collectives was 18 pages last edited 2025-11. All three were
+# exported to Archive/Privat/Nextcloud-Export-2026-09-18 first.
+#
+# memories and spreed went the same day for the same kind of reason - the thing
+# that justified them had quietly stopped. memories was set up deliberately in
+# 2024, timelinePath pinned by hand to /SofortUpload, and the phone's instant
+# upload stopped that year: zero camera photos since, while the indexer still
+# walked 14775 files every cron tick, 8033 of them theresa's phone backup that
+# the configured timeline does not even show. spreed held 179 chat messages of
+# which 148 were its own changelog and sample bots; the last one-to-one message
+# a human sent was in 2022. Photos are untouched by this - the bundled Photos
+# app still browses them.
+#
+# Removing an app from this file only takes its code away - `occ app:disable`
+# on the running instance, BEFORE the code goes, is what runs its uninstall
+# steps. Their tables are still in the database.
 #
 # Every tarball unpacks to exactly one directory named for its app; the build
 # checks that rather than trusting it.
-calendar              6.2.2   fcdf5fcce3b4abf0481741d0c21c856577feada7d0f2b7502fe849a32638a544 https://github.com/nextcloud-releases/calendar/releases/download/v6.2.2/calendar-v6.2.2.tar.gz
-collectives           4.1.0   058818f640bdd5fb69c3f7979454f9af23618f3d77f29ccfa0887cf64e3a199f https://github.com/nextcloud/collectives/releases/download/v4.1.0/collectives-4.1.0.tar.gz
-contacts              8.3.7   ac40d24f25000bed1c3a1d0c4403f056b18c1a111f953ce78e5d7e1894ee0e92 https://github.com/nextcloud-releases/contacts/releases/download/v8.3.7/contacts-v8.3.7.tar.gz
-cospend               3.2.0   99c95c643366be9617ff6abb6b3ca24cb48289362f93b20b7aab5bffcfb40034 https://github.com/julien-nc/cospend-nc/releases/download/v3.2.0/cospend-3.2.0.tar.gz
-dav_push              1.0.1   b522ec4a03c77697dc28fcc9b9bc1c841a90ca42dff5657f9977ca28cd824b1b https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.1/dav_push.tar.gz
-deck                  1.16.3  46a637a272d8630d373115af66fc1d3bd42495e5c1f13cf5aba3a7906a93b2e6 https://github.com/nextcloud-releases/deck/releases/download/v1.16.3/deck-v1.16.3.tar.gz
-files_retention       3.0.0   e3c7c2ed50cd66cdbeaa27a730fe610405a04649bf8be4365979eb77c7f3d7a4 https://github.com/nextcloud-releases/files_retention/releases/download/v3.0.0/files_retention-v3.0.0.tar.gz
-forms                 5.2.5   8620e1b675adb1ca48f8808e9359ee949a022e8be706ff1806db28fc2b498c7e https://github.com/nextcloud-releases/forms/releases/download/v5.2.5/forms-v5.2.5.tar.gz
-groupfolders          20.1.12 fbfd7a4a48a7086ec04cf73426c00cd77a6c7e5f75e1e4b1028dd353497ffa1f https://github.com/nextcloud-releases/groupfolders/releases/download/v20.1.12/groupfolders-v20.1.12.tar.gz
-impersonate           3.0.1   98e95a5186864686084f08c8a708549ca2e1f4739579fefb742a453f86c2e514 https://github.com/nextcloud-releases/impersonate/releases/download/v3.0.1/impersonate-v3.0.1.tar.gz
-integration_paperless 1.0.10  8fe5f42722c0d8182d3d970a43992aa64e8b25ebc0804e9c6e074e175204e9ea https://github.com/nextcloud-releases/integration_paperless/releases/download/v1.0.10/integration_paperless-v1.0.10.tar.gz
-memories              7.7.0   391bfee9790dfaa4e4e5b5cc14abf632ffe353eec5d7621b584f498d5da8b7da https://github.com/pulsejet/memories/releases/download/v7.7.0/memories.tar.gz
-news                  28.0.1  e77cf00719bfbd4a90bdcde1f6877bdd1631a89861d0cea5552e3ffdb24732e0 https://github.com/nextcloud/news/releases/download/28.0.1/news.tar.gz
-notes                 4.13.0  19796d6ed415d79a0a373f8f51dbd760e38ac6091518f84b1d452592fbc346cb https://github.com/nextcloud-releases/notes/releases/download/v4.13.0/notes-v4.13.0.tar.gz
-notify_push           1.3.0   67dbd30259fffc362cc7954b59e24fd4a051174b68efd17d6812e7a69f8f7700 https://github.com/nextcloud-releases/notify_push/releases/download/v1.3.0/notify_push-v1.3.0.tar.gz
-onlyoffice            9.13.0  7acb7a407a014115f5a2e9e5c227e38042c9e1fd301f3f8508c73ca4c43ffffb https://github.com/ONLYOFFICE/onlyoffice-nextcloud/releases/download/v9.13.0/onlyoffice.tar.gz
-phonetrack            1.0.1   f893caf0487b4451ccade09d940d45d630540f4e05c3447de764c11ce5170d0d https://github.com/julien-nc/phonetrack/releases/download/v1.0.1/phonetrack-1.0.1.tar.gz
-polls                 8.6.3   bbefcc1a39855f9c5109c1020e5aa43360b4c4f6384220958fb197803de2357a https://github.com/nextcloud-releases/polls/releases/download/v8.6.3/polls-v8.6.3.tar.gz
-richdocuments         9.0.3   59371a5fde568483cbeab248e154a4877d7756787909477c9dac2706e3247f8f https://github.com/nextcloud-releases/richdocuments/releases/download/v9.0.3/richdocuments-v9.0.3.tar.gz
-sociallogin           6.3.1   041975cef66f820a339e1796fe9eeb7b7ffc754632c9b3a109854b34b9c003ae https://github.com/zorn-v/nextcloud-social-login/releases/download/v6.3.1/release.tar.gz
-spreed                22.0.11 346adf7d600af8641ef0bb7b1edbcbdbdeea0dced3419cbe0a23b22f6228c37a https://github.com/nextcloud-releases/spreed/releases/download/v22.0.11/spreed-v22.0.11.tar.gz
-tables                1.0.5   f1303c1c8423758708cd1a0420100047a4fcdecca567dcac45bc30b161eb2ea0 https://github.com/nextcloud-releases/tables/releases/download/v1.0.5/tables-v1.0.5.tar.gz
-tasks                 0.17.1  23941d35abe0bfbe054ae5f0156373ffef8b398f59f2435984429fda4d75f0bf https://github.com/nextcloud/tasks/releases/download/v0.17.1/tasks.tar.gz
-whiteboard            1.5.7   87e0ae7ed47e88bb91b8455571ca7cf5f037e096126c2930a1b8c1cadc20c20d https://github.com/nextcloud-releases/whiteboard/releases/download/v1.5.7/whiteboard-v1.5.7.tar.gz
+calendar      6.2.2   fcdf5fcce3b4abf0481741d0c21c856577feada7d0f2b7502fe849a32638a544 https://github.com/nextcloud-releases/calendar/releases/download/v6.2.2/calendar-v6.2.2.tar.gz
+contacts      8.3.7   ac40d24f25000bed1c3a1d0c4403f056b18c1a111f953ce78e5d7e1894ee0e92 https://github.com/nextcloud-releases/contacts/releases/download/v8.3.7/contacts-v8.3.7.tar.gz
+dav_push      1.0.1   b522ec4a03c77697dc28fcc9b9bc1c841a90ca42dff5657f9977ca28cd824b1b https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.1/dav_push.tar.gz
+groupfolders  20.1.12 fbfd7a4a48a7086ec04cf73426c00cd77a6c7e5f75e1e4b1028dd353497ffa1f https://github.com/nextcloud-releases/groupfolders/releases/download/v20.1.12/groupfolders-v20.1.12.tar.gz
+impersonate   3.0.1   98e95a5186864686084f08c8a708549ca2e1f4739579fefb742a453f86c2e514 https://github.com/nextcloud-releases/impersonate/releases/download/v3.0.1/impersonate-v3.0.1.tar.gz
+notes         4.13.0  19796d6ed415d79a0a373f8f51dbd760e38ac6091518f84b1d452592fbc346cb https://github.com/nextcloud-releases/notes/releases/download/v4.13.0/notes-v4.13.0.tar.gz
+notify_push   1.3.0   67dbd30259fffc362cc7954b59e24fd4a051174b68efd17d6812e7a69f8f7700 https://github.com/nextcloud-releases/notify_push/releases/download/v1.3.0/notify_push-v1.3.0.tar.gz
+phonetrack    1.0.1   f893caf0487b4451ccade09d940d45d630540f4e05c3447de764c11ce5170d0d https://github.com/julien-nc/phonetrack/releases/download/v1.0.1/phonetrack-1.0.1.tar.gz
+richdocuments 9.0.3   59371a5fde568483cbeab248e154a4877d7756787909477c9dac2706e3247f8f https://github.com/nextcloud-releases/richdocuments/releases/download/v9.0.3/richdocuments-v9.0.3.tar.gz
