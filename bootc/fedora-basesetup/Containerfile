@@ -1,4 +1,4 @@
-FROM quay.io/fedora/fedora-silverblue:44
+FROM quay.io/fedora/fedora-silverblue:44@sha256:d60d4e35498c73daa896b6e324843837424a2e5dd132878f53fb5fb515a4b5cd
 
 RUN dnf install -y \
     # Dev tools
