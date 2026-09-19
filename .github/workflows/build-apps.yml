@@ -13,11 +13,13 @@ on:
       - main
     paths:
       - apps/**
+      - testing/test_nextcloud_pins.py
       - .containerignore
       - .github/workflows/build-apps.yml
   pull_request:
     paths:
       - apps/**
+      - testing/test_nextcloud_pins.py
       - .containerignore
       - .github/workflows/build-apps.yml
   workflow_dispatch:
@@ -35,6 +37,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Ahead of the build because it answers a question the build cannot. The
+  # build fetches each app by URL and checks its hash, which still succeeds
+  # for an app the new server will refuse to enable: the app store indexes by
+  # platform, and an app whose `info.xml` caps below the server version is
+  # simply absent from that platform's feed. `occ upgrade` then disables it
+  # and does not re-enable it - on the instance, after the bump.
+  #
+  # Not gated ahead of `build`: a broken pin and a broken Containerfile are
+  # different answers and both are worth having at once.
+  pins:
+    name: nextcloud pins
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      # The one place this variable is set. Everywhere else the suite runs,
+      # these skip themselves, so a checkout with no network still goes green.
+      - name: Check every pin against the app store
+        env:
+          NEXTCLOUD_TESTS: '1'
+        run: uv run pytest testing/test_nextcloud_pins.py -v
+
   build:
     name: ${{ matrix.image }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
