@@ -23,7 +23,10 @@ RUN dnf install -y \
     # System
     psmisc \
     lsof \
-    && dnf clean all
+    && dnf clean all \
+    && rm -rf /usr/lib/sysimage/libdnf5/transaction_history.sqlite* \
+              /var/lib/dnf/repos /var/log/dnf5.log \
+              /var/cache/ldconfig/aux-cache
 
 # Trust material, shared by every image here and copied from the repository
 # root - which is why this image builds with the root as its context.
