@@ -153,7 +153,7 @@ jobs:
 
       - name: Install cosign
         if: steps.meta.outputs.push == 'true'
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
 
       # Sign the digest, not the tags: a tag is a moving target, and signing it
       # by name signs whatever it pointed at when cosign resolved it.
