@@ -17,6 +17,7 @@ on:
       - trust/**
       - testing/**
       - pyproject.toml
+      - uv.lock
       - .github/workflows/charts.yml
   pull_request:
     paths:
@@ -24,6 +25,7 @@ on:
       - trust/**
       - testing/**
       - pyproject.toml
+      - uv.lock
       - .github/workflows/charts.yml
   workflow_dispatch:
 

@@ -16,6 +16,13 @@
 #     server that fails to install its mods - a long way from the commit that
 #     caused it. `packwiz refresh` owns the formatting of that tree.
 
+ci:
+  # pre-commit.ci's runner has no docker daemon, and hadolint's hook is a
+  # container. The error is not a hook failure, it aborts the whole run before
+  # the hooks after it - so skipping it here is what keeps the rest gated.
+  # The Containerfile is still linted locally, where docker exists.
+  skip: [hadolint-docker]
+
 exclude: |
   (?x)^(
     olares-apps/[^/]+/files/.*
@@ -76,20 +83,3 @@ repos:
     # repositories hold at build time. Pinning versions here would mean hand-
     # bumping them forever and would still not make the build reproducible.
     args: [--ignore, DL3041]
-
-- repo: local
-  hooks:
-  - id: chart-render-tests
-    name: chart render tests
-    language: system
-    # The render tier only - seconds, no cluster, no image pull. It is what
-    # catches a template that does not parse, a value under the wrong path, an
-    # object that is not valid Kubernetes, and the invariants that cannot live
-    # in one file: a subchart's replica count matching the workload lever, a
-    # vendored dependency being present, packwiz's index hash matching the pack.
-    #
-    # `--frozen`: a hook must not re-resolve and rewrite uv.lock underneath the
-    # commit it is gating.
-    entry: uv run --frozen pytest testing/ -q
-    pass_filenames: false
-    files: ^(olares-apps/|testing/|trust/|pyproject\.toml$|uv\.lock$)
