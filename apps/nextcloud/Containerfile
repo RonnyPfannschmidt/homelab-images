@@ -16,7 +16,7 @@
 # and 34.0 and nothing else. The homeserver migrated to 33 on 2026-09-19, which
 # is what makes this bump legal - it could not have been done in one step from
 # the 32 it was on that morning.
-FROM docker.io/library/nextcloud:34.0.4-apache@sha256:a5ace30c695afe48c2c406e940ee7886a81e13fa382e57cd68b2416d1a66914c
+FROM docker.io/library/nextcloud:35.0.0-apache@sha256:23c101539e295aaf83888c9c1cae7df3fb6ce80b9ea9310248dad46af8c89936
 
 # exiftool and ffmpeg are what `memories` needs and the base has neither;
 # go-vod it ships itself, per-architecture, inside the app tarball.
