@@ -74,11 +74,18 @@ jobs:
         # they are merged into the existing ones, in order, so listing arch
         # only here left a single job that was whichever entry came last. arch
         # has to be a matrix axis; include only attaches the runner to it.
+        #
+        # 26.04, not 24.04, and not a cosmetic bump: --source-date-epoch and
+        # --rewrite-timestamp below need podman 5.x, and 24.04 ships 4.9.3.
+        # It is not waiting to catch up either - runner-images has an open
+        # issue titled "Podman will be downgraded on Ubuntu 22.04 and 24.04
+        # runner images". 26.04 ships 5.7.0 on both architectures, and is
+        # already what the pins and manifest jobs run on.
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
