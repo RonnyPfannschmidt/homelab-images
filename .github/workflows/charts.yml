@@ -39,7 +39,7 @@ concurrency:
 jobs:
   render:
     name: render, validate, check trust
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,7 +60,7 @@ jobs:
 
   cluster:
     name: install on kind
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Not gated on `render`: a chart that fails to lint will fail here too, and
     # running them in parallel puts both answers in front of you at once.
     steps:
