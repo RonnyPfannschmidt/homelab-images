@@ -140,9 +140,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: shellcheck
-        run: shellcheck -s sh tools/nextcloud-local-manifest/*.sh
-
       # The real assertion. Build the same tree the Windows job builds, run the
       # shell implementation over it, and compare with the manifest that job
       # produced. Two implementations of one format agreeing on nothing but

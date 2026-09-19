@@ -65,6 +65,16 @@ repos:
       - pytest
       - types-PyYAML
 
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.11.0.1-1
+  hooks:
+  - id: shellcheck
+    # shellcheck-py, not koalaman's hook: that one is a container, and the
+    # runner pre-commit.ci gives us has no docker - see the `ci:` block above.
+    # No `-s`: the dialect is each script's own shebang, and this tree has both
+    # `#!/bin/sh` and `#!/usr/bin/env bash`. Forcing one flags the other's
+    # every construct as undefined.
+
 - repo: https://github.com/rhysd/actionlint
   rev: v1.7.7
   hooks:
