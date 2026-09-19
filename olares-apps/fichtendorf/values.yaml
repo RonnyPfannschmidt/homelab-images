@@ -55,7 +55,7 @@ minecraft:
 
   image:
     repository: docker.io/itzg/minecraft-server
-    tag: 2026.8.2-java25
+    tag: 2026.8.2-java25@sha256:efa878ddb49cf5251b2e5f2ad71b08fd2f7236c1f7907433f6697258b31d2ce4
     pullPolicy: IfNotPresent
 
   # A Minecraft server owns its world files exclusively; two of them writing the
