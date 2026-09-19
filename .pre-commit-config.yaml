@@ -88,6 +88,13 @@ repos:
     # actionlint runs shellcheck over every `run:` block, which is most of what
     # is worth checking in a repository whose job is two build workflows.
 
+# Different question than actionlint's: injection, permissions, unpinned
+# actions. It also reads this file and every `action.yml`, not just workflows.
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: v1.30.1
+  hooks:
+  - id: zizmor
+
 - repo: https://github.com/hadolint/hadolint
   rev: v2.12.0
   hooks:
