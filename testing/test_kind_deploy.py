@@ -101,15 +101,22 @@ def _flux_unavailable() -> str | None:
         text=True,
         check=True,
     ).stdout.strip()
+    # `origin/*` and not every remote-tracking ref: on a pull request the
+    # runner also holds `pull/N/merge`, a ref that exists only in that
+    # checkout. Counting it says the commit is fetchable when it is not, and
+    # the test then waits five minutes for a HelmRelease that can never
+    # resolve its source.
     on_remote = subprocess.run(
-        ["git", "branch", "-r", "--contains", head],
+        ["git", "branch", "-r", "--contains", head, "origin/*"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     if not on_remote.stdout.strip():
-        return f"commit {head[:8]} is not on any remote; Flux fetches from {PUBLIC_REPO_URL}"
+        return (
+            f"commit {head[:8]} is not on a branch at origin; Flux fetches from {PUBLIC_REPO_URL}"
+        )
     return None
 
 
@@ -165,8 +172,14 @@ def test_flux_joins_a_public_chart_to_private_values(flux: str, tmp_path: Path) 
     private_values = yaml.safe_dump(
         {
             "workloads": {"fichtendorf": {"replicaCount": 0}, "terminal": {"replicaCount": 0}},
+            # Both of these are the subchart's own keys, and neither has a
+            # parent equivalent Helm would forward: `workloads.…` is the lever
+            # Olares drives, `minecraft.replicaCount` is the one the Deployment
+            # reads, and values.yaml writes them out twice for that reason.
+            # The marker rides on the motd because it reaches the Deployment as
+            # an env var, which is where this test can see it.
+            "minecraft": {"replicaCount": 0, "minecraftServer": {"motd": marker}},
             "userspace": {"appData": "/tmp/appdata"},
-            "server": {"motd": marker},
         }
     )
 

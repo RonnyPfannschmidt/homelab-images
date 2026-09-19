@@ -31,11 +31,12 @@ manifest="$here/server-manifest.sh"
 data=${NEXTCLOUD_DATA:-/var/lib/nextcloud/data}
 out=${1:-theresa-server.tsv}
 
-: > "$out"
-"$manifest" "$data/theresa/files" >> "$out"
-"$manifest" "$data/__groupfolders/1" | sed 's|^|geteilt/|' >> "$out"
-"$manifest" "$data/__groupfolders/1" | sed 's|^|geteilt (2)/|' >> "$out"
-"$manifest" "$data/ronny/files/Familie" | sed 's|^|Familie/|' >> "$out"
+{
+  "$manifest" "$data/theresa/files"
+  "$manifest" "$data/__groupfolders/1" | sed 's|^|geteilt/|'
+  "$manifest" "$data/__groupfolders/1" | sed 's|^|geteilt (2)/|'
+  "$manifest" "$data/ronny/files/Familie" | sed 's|^|Familie/|'
+} > "$out"
 
 LC_ALL=C sort -o "$out" "$out"
 
