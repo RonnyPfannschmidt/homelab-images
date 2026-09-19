@@ -1,0 +1,38 @@
+# Input to rpm-lockfile-prototype; rpms.lock.yaml beside it is the output.
+#
+# Regenerate with, from the repository root:
+#   rpm-lockfile-prototype --image <the FROM digest in Containerfile> \
+#       --outfile=bootc/fedora-basesetup/rpms.lock.yaml \
+#       bootc/fedora-basesetup/rpms.in.yaml
+#
+# updates-archive is not optional. releases/ is frozen and never moves, but
+# updates/ carries only the current build of each package - and the base image
+# is locked to an older one. The archive is where a superseded update stays
+# reachable, which is what keeps a committed lockfile resolvable after Fedora
+# ships the next build. Its own repo file says as much: it exists for "OSTree
+# based systems ... layering packages on top of a base layer that doesn't have
+# the latest stable content".
+contentOrigin:
+  repos:
+    - repoid: fedora
+      baseurl: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/$basearch/os/
+    - repoid: updates-archive
+      baseurl: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/$basearch/
+packages:
+  - uv
+  - stow
+  - the_silver_searcher
+  - tree
+  - which
+  - file
+  - jq
+  - pass-otp
+  - pass-audit
+  - gnupg2
+  - qtpass
+  - git
+  - gitk
+  - git-annex
+  - psmisc
+  - lsof
+arches: [x86_64]

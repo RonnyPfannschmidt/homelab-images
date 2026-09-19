@@ -1,0 +1,603 @@
+---
+lockfileVersion: 1
+lockfileVendor: redhat
+arches:
+- arch: x86_64
+  packages:
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/g/git-annex-10.20260115-1.fc44.x86_64.rpm
+    repoid: fedora
+    size: 14415231
+    checksum: sha256:15694479fedead2b6b4b700d9fc3696f8d4ca0d289c3cfdb658ed5b0057cc0bb
+    name: git-annex
+    evr: 10.20260115-1.fc44
+    sourcerpm: git-annex-10.20260115-1.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/j/jemalloc-5.3.0-14.fc44.x86_64.rpm
+    repoid: fedora
+    size: 304125
+    checksum: sha256:32c49c3f26c24f0e2fc0968f483d31d52ba4543e0da25a4ef0773cff662090fe
+    name: jemalloc
+    evr: 5.3.0-14.fc44
+    sourcerpm: jemalloc-5.3.0-14.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/l/liboath-2.6.14-1.fc44.x86_64.rpm
+    repoid: fedora
+    size: 52532
+    checksum: sha256:344bdf9bb5193e35e37f30fe70019f7c4bbe2b2848fbe404264842c20848651d
+    name: liboath
+    evr: 2.6.14-1.fc44
+    sourcerpm: oath-toolkit-2.6.14-1.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/o/oathtool-2.6.14-1.fc44.x86_64.rpm
+    repoid: fedora
+    size: 46619
+    checksum: sha256:830088dc61802d6d5c9ec43d11e5c38aabd1c5a79b94045c0228651a30fb7f5c
+    name: oathtool
+    evr: 2.6.14-1.fc44
+    sourcerpm: oath-toolkit-2.6.14-1.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/pass-1.7.4-19.fc44.noarch.rpm
+    repoid: fedora
+    size: 60434
+    checksum: sha256:9b026562b3e25e58b6a35585010465ddede1c61e586b5df71b0dc5f58e2419fe
+    name: pass
+    evr: 1.7.4-19.fc44
+    sourcerpm: pass-1.7.4-19.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/pass-audit-1.2-7.fc44.noarch.rpm
+    repoid: fedora
+    size: 13802
+    checksum: sha256:d0eae4235d5a434a2d73d7e3098ad2ae60e1a8c01a32694ef660a05e01967d19
+    name: pass-audit
+    evr: 1.2-7.fc44
+    sourcerpm: pass-audit-1.2-7.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/pass-otp-1.2.0-19.fc44.noarch.rpm
+    repoid: fedora
+    size: 29062
+    checksum: sha256:01759c1fd8d8d0cf159ae114517c20241d06b8e7cb711b7baaf782b053f17d33
+    name: pass-otp
+    evr: 1.2.0-19.fc44
+    sourcerpm: pass-otp-1.2.0-19.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Carp-1.54-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 29473
+    checksum: sha256:e9cf0043e42ebe69eaa72c71ea27eb6bdf471c5de39ebd11b17a11f5a111ae96
+    name: perl-Carp
+    evr: 1.54-521.fc44
+    sourcerpm: perl-Carp-1.54-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Digest-1.20-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 25454
+    checksum: sha256:af2c8773549ea5d3314107039d6db2b7671babf88836282cfbad298d1ca6b53e
+    name: perl-Digest
+    evr: 1.20-521.fc44
+    sourcerpm: perl-Digest-1.20-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Digest-MD5-2.59-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 36881
+    checksum: sha256:1ec202276cb4b5f2c78aa989a043980d26f2aa76dcda966b499e2f62ba60bed8
+    name: perl-Digest-MD5
+    evr: 2.59-521.fc44
+    sourcerpm: perl-Digest-MD5-2.59-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Encode-3.21-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 1103299
+    checksum: sha256:c65c63420538f8b027a213b9b350afd6285becf1b58742a947552491277fcd3f
+    name: perl-Encode
+    evr: 4:3.21-521.fc44
+    sourcerpm: perl-Encode-3.21-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Error-0.17030-3.fc44.noarch.rpm
+    repoid: fedora
+    size: 41277
+    checksum: sha256:7185244ba6bd96c9ee2e95540f1c08fcfccbc24ceacba2c3b9eb5e7600019f09
+    name: perl-Error
+    evr: 1:0.17030-3.fc44
+    sourcerpm: perl-Error-0.17030-3.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Exporter-5.79-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 31557
+    checksum: sha256:91df6e70667c59ad1dcaae16da543d42eb585137f7daea8c542e44e093795ed9
+    name: perl-Exporter
+    evr: 5.79-521.fc44
+    sourcerpm: perl-Exporter-5.79-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-File-Path-2.18-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 36102
+    checksum: sha256:d4055404e4bad92adad5541529f7ea112df609c870adc52e18a4fe81cea72157
+    name: perl-File-Path
+    evr: 2.18-522.fc44
+    sourcerpm: perl-File-Path-2.18-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-File-Temp-0.231.200-2.fc44.noarch.rpm
+    repoid: fedora
+    size: 60991
+    checksum: sha256:e804c108d3bb4de20837ddad280ba43b079b3da790054bce17fca5b12049024b
+    name: perl-File-Temp
+    evr: 1:0.231.200-2.fc44
+    sourcerpm: perl-File-Temp-0.231.200-2.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Getopt-Long-2.58-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 65135
+    checksum: sha256:e5669af3a35df5c9f22d1a573e78a4e34ae12f7d92876da306fa49358491bf13
+    name: perl-Getopt-Long
+    evr: 1:2.58-521.fc44
+    sourcerpm: perl-Getopt-Long-2.58-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-IO-Socket-IP-0.43-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 43175
+    checksum: sha256:9e02014db5da0a8d493d226287f2736b13fe890a8d7fb4723bd38b78bc096a4e
+    name: perl-IO-Socket-IP
+    evr: 0.43-522.fc44
+    sourcerpm: perl-IO-Socket-IP-0.43-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-IO-Socket-SSL-2.098-2.fc44.noarch.rpm
+    repoid: fedora
+    size: 240330
+    checksum: sha256:c611b0adbabd7df6828a8fbdb573435f034ac2242407024e8987a54aa4959399
+    name: perl-IO-Socket-SSL
+    evr: 2.098-2.fc44
+    sourcerpm: perl-IO-Socket-SSL-2.098-2.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-MIME-Base32-1.303-25.fc44.noarch.rpm
+    repoid: fedora
+    size: 21012
+    checksum: sha256:c5c8a4253b0a9a4138f75767f0a7d9e135f1cedcfddf736e60fc049be8fef591
+    name: perl-MIME-Base32
+    evr: 1.303-25.fc44
+    sourcerpm: perl-MIME-Base32-1.303-25.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-MIME-Base64-3.16-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 30485
+    checksum: sha256:6b82edd40984de53b92dfcc4994f15162563120a26f03e66c6f2bf6cf6da36af
+    name: perl-MIME-Base64
+    evr: 3.16-521.fc44
+    sourcerpm: perl-MIME-Base64-3.16-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Net-SSLeay-1.94-12.fc44.x86_64.rpm
+    repoid: fedora
+    size: 382388
+    checksum: sha256:21ac409aaa96d6fcd8a05d138291308d53a238c45fe2079573ec4f510762d38f
+    name: perl-Net-SSLeay
+    evr: 1.94-12.fc44
+    sourcerpm: perl-Net-SSLeay-1.94-12.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-PathTools-3.94-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 89424
+    checksum: sha256:1e296129eaccfd98bd280fb4be62ed6434c022b70ee4b088fa0df65f6895fed5
+    name: perl-PathTools
+    evr: 3.94-521.fc44
+    sourcerpm: perl-PathTools-3.94-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Pod-Escapes-1.07-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 20266
+    checksum: sha256:b7ae89fb11761199357b2ac7f3b3be61fb8128275e7f6e88f5d8398411a5c306
+    name: perl-Pod-Escapes
+    evr: 1:1.07-521.fc44
+    sourcerpm: perl-Pod-Escapes-1.07-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Pod-Perldoc-3.28.01-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 88178
+    checksum: sha256:d02cb8537ec5f3eed4aaafcf6b1b422a60d9bcb6c72af6b39a286724a4b7e3ed
+    name: perl-Pod-Perldoc
+    evr: 3.28.01-522.fc44
+    sourcerpm: perl-Pod-Perldoc-3.28.01-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Pod-Simple-3.47-4.fc44.noarch.rpm
+    repoid: fedora
+    size: 225256
+    checksum: sha256:f00d9ebb9cef0d0fcadb174bd1a5ad7766504fb42c6aae45dcfa9414a419c959
+    name: perl-Pod-Simple
+    evr: 1:3.47-4.fc44
+    sourcerpm: perl-Pod-Simple-3.47-4.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Pod-Usage-2.05-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 41637
+    checksum: sha256:c561c517f42f77bf81b342248d7cb043fa58a1915536baa624dbb041590ff04b
+    name: perl-Pod-Usage
+    evr: 4:2.05-521.fc44
+    sourcerpm: perl-Pod-Usage-2.05-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Scalar-List-Utils-1.70-2.fc44.x86_64.rpm
+    repoid: fedora
+    size: 77209
+    checksum: sha256:18b1259924c8e5202307936ecea94076812b743ed3c568cf5237826c4270efe5
+    name: perl-Scalar-List-Utils
+    evr: 5:1.70-2.fc44
+    sourcerpm: perl-Scalar-List-Utils-1.70-2.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Storable-3.37-522.fc44.x86_64.rpm
+    repoid: fedora
+    size: 103289
+    checksum: sha256:74e8fc087d1c3e53aaf70ec1fef8e8c80fe6458efda83523ca780ee10f5fa9e8
+    name: perl-Storable
+    evr: 1:3.37-522.fc44
+    sourcerpm: perl-Storable-3.37-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Term-ANSIColor-5.01-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 48821
+    checksum: sha256:09a2f964f650f3723e73dc03dcaa85e372232f8ebb4b38ac7d3bf337545fa9dd
+    name: perl-Term-ANSIColor
+    evr: 5.01-522.fc44
+    sourcerpm: perl-Term-ANSIColor-5.01-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Term-Cap-1.18-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 22526
+    checksum: sha256:ae9f5f35a19822b3e9f36990e4a2885a40c8aebe5e23dfaebdd2cc6a6db3a67f
+    name: perl-Term-Cap
+    evr: 1.18-521.fc44
+    sourcerpm: perl-Term-Cap-1.18-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-TermReadKey-2.38-27.fc44.x86_64.rpm
+    repoid: fedora
+    size: 36305
+    checksum: sha256:f632151546e2dba1ed7c4bd9a1a5c0c8edd4b114c66b4a2b79a34f165e594050
+    name: perl-TermReadKey
+    evr: 2.38-27.fc44
+    sourcerpm: perl-TermReadKey-2.38-27.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Text-ParseWords-3.31-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 16868
+    checksum: sha256:ca97e6d30af840fff4de4d59470aa721ffecbda6229b46c9565656dc6b2aa6b7
+    name: perl-Text-ParseWords
+    evr: 3.31-521.fc44
+    sourcerpm: perl-Text-ParseWords-3.31-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Text-Tabs+Wrap-2024.001-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 22273
+    checksum: sha256:26c2082150a8ffc95ce2d3936048a693ca3e7456f1b4ab531dfa5bfc2025a414
+    name: perl-Text-Tabs+Wrap
+    evr: 2024.001-521.fc44
+    sourcerpm: perl-Text-Tabs+Wrap-2024.001-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Time-HiRes-1.9778-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 58570
+    checksum: sha256:f78538da96be7d8fba7fd99e4cee7ceb503cd268d3cba718aa287f494399e196
+    name: perl-Time-HiRes
+    evr: 4:1.9778-521.fc44
+    sourcerpm: perl-Time-HiRes-1.9778-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Time-Local-1.350-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 35337
+    checksum: sha256:b8964a6c838bdc05384878c54f852844b36488ef693246eb6f31d69c3e187558
+    name: perl-Time-Local
+    evr: 2:1.350-521.fc44
+    sourcerpm: perl-Time-Local-1.350-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-Unicode-Normalize-1.32-521.fc44.x86_64.rpm
+    repoid: fedora
+    size: 76218
+    checksum: sha256:55aca86be49cfc50e891c1f836ed1113878d0ebbe47c2ab7d54a9db132b810ca
+    name: perl-Unicode-Normalize
+    evr: 1.32-521.fc44
+    sourcerpm: perl-Unicode-Normalize-1.32-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-constant-1.33-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 23450
+    checksum: sha256:75be8875a0b824f80f467d08216beaf22d7d38848db72307d67e9e7684147a48
+    name: perl-constant
+    evr: 1.33-522.fc44
+    sourcerpm: perl-constant-1.33-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-libnet-3.15-522.fc44.noarch.rpm
+    repoid: fedora
+    size: 131475
+    checksum: sha256:185258d366a688434d08bfb1fc61f17615147e26d964ef1d88a834c7905b4fbc
+    name: perl-libnet
+    evr: 3.15-522.fc44
+    sourcerpm: perl-libnet-3.15-522.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-parent-0.244-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 15238
+    checksum: sha256:a8a05fad32039b86b093119d10c8d2e644948f2ab4b259bd8adfca835a154252
+    name: perl-parent
+    evr: 1:0.244-521.fc44
+    sourcerpm: perl-parent-0.244-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-podlators-6.0.2-521.fc44.noarch.rpm
+    repoid: fedora
+    size: 131562
+    checksum: sha256:3b65193fa8e9e2ba12f19ac4470100d7f7f505f62fbd7520ed3dd4c2a9ec6edc
+    name: perl-podlators
+    evr: 1:6.0.2-521.fc44
+    sourcerpm: perl-podlators-6.0.2-521.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/pwgen-2.08-18.fc44.x86_64.rpm
+    repoid: fedora
+    size: 30459
+    checksum: sha256:911263ad15d8b3a848feae2203ab0bb07fbe8d89c322c4ee06f1bc021baad8c2
+    name: pwgen
+    evr: 2.08-18.fc44
+    sourcerpm: pwgen-2.08-18.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/python3-pass-audit-1.2-7.fc44.noarch.rpm
+    repoid: fedora
+    size: 40828
+    checksum: sha256:0f3f52d84d933f807c19775b7d77845f042fb23a583ca8d51dcd6fccf56abf45
+    name: python3-pass-audit
+    evr: 1.2-7.fc44
+    sourcerpm: pass-audit-1.2-7.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/python3-zxcvbn-4.5.0-6.fc44.noarch.rpm
+    repoid: fedora
+    size: 419519
+    checksum: sha256:9fd1bec7006dfe6f662c2f9dade58701aed6558c5b94fbd9d55a8d13aca06a7c
+    name: python3-zxcvbn
+    evr: 4.5.0-6.fc44
+    sourcerpm: python-zxcvbn-4.5.0-6.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/q/qrencode-4.1.1-12.fc44.x86_64.rpm
+    repoid: fedora
+    size: 25752
+    checksum: sha256:93e24cfcbbdfade16b9171da31d9bfaa23c4d2607a9f18b74f73dced893c2b0f
+    name: qrencode
+    evr: 4.1.1-12.fc44
+    sourcerpm: qrencode-4.1.1-12.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/s/stow-2.4.1-4.fc44.noarch.rpm
+    repoid: fedora
+    size: 127117
+    checksum: sha256:d84fa2e630630cc72d7f5e1980265c7737aab55da0df58e85beec0a692ddf8f6
+    name: stow
+    evr: 2.4.1-4.fc44
+    sourcerpm: stow-2.4.1-4.fc44.src.rpm
+  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/t/the_silver_searcher-2.2.0^2020704.5a1c8d8-15.fc44.x86_64.rpm
+    repoid: fedora
+    size: 57870
+    checksum: sha256:3fb120f3b775af69397013f942d8b5d473470a2d750db0a017941248f9f5012e
+    name: the_silver_searcher
+    evr: 2.2.0^2020704.5a1c8d8-15.fc44
+    sourcerpm: the_silver_searcher-2.2.0^2020704.5a1c8d8-15.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-2.55.0-1.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 42124
+    checksum: sha256:e6dc583ab2a545dea11573ff604df0fadcc0688e07d867591ec1b6ed14b94e0b
+    name: git
+    evr: 2.55.0-1.fc44
+    sourcerpm: git-2.55.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-gui-2.55.0-1.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 259919
+    checksum: sha256:0dfa41962c06aaca826ff49228d3e81560fcd266981e8b5e663c05a86785546e
+    name: git-gui
+    evr: 2.55.0-1.fc44
+    sourcerpm: git-2.55.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/gitk-2.55.0-1.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 169938
+    checksum: sha256:06363d02043979820ebed6da523252a78ba44e0b5006dee82ba19b1dff2ed669
+    name: gitk
+    evr: 2.55.0-1.fc44
+    sourcerpm: git-2.55.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-AutoLoader-5.74-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 21040
+    checksum: sha256:e573e74d5cfe2f4130553fe8a618629fe7690f8ad95882219531c455e7c4bedf
+    name: perl-AutoLoader
+    evr: 5.74-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-B-1.89-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 181378
+    checksum: sha256:005c32b5c505fce39243822ab56eb5c5f5b01a27b2a68c68b08fdf973980b257
+    name: perl-B
+    evr: 1.89-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Class-Struct-0.68-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 21903
+    checksum: sha256:d339ef07ac2a6826d0cf6c95edd57c2a349861ff2af75b639def4cbdc59a7dba
+    name: perl-Class-Struct
+    evr: 0.68-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Data-Dumper-2.192-523.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 57611
+    checksum: sha256:36ebb8b4fff0fa3b92be6d583b110cd5e2aa98741171f88905aeb4a4b9fc9903
+    name: perl-Data-Dumper
+    evr: 2.192-523.fc44
+    sourcerpm: perl-Data-Dumper-2.192-523.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-DynaLoader-1.57-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 25914
+    checksum: sha256:28d1c66d3802eafc0cf8b152a62424f501a6aa02ee2af987470a1bb39e55d6a5
+    name: perl-DynaLoader
+    evr: 1.57-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Errno-1.38-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 14594
+    checksum: sha256:580510315ad37e6ce65995d2be4793d781a508b15d95b53ae6efe7acdae0b923
+    name: perl-Errno
+    evr: 1.38-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Fcntl-1.20-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 29755
+    checksum: sha256:73dce99c45fb5588a5963f8d83523850fdc1e8ff751d5684f3fb2049c0614705
+    name: perl-Fcntl
+    evr: 1.20-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-File-Basename-2.86-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 16880
+    checksum: sha256:830fd5ee689cb9f617b1168e498857b61cb96f9a0fe4b15a98753f648143175c
+    name: perl-File-Basename
+    evr: 2.86-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-File-Copy-2.41-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 19906
+    checksum: sha256:cd95b607eae59e2a437054642a378922a01a6e62c4d5e340a82fd912abd1a368
+    name: perl-File-Copy
+    evr: 2.41-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-File-Find-1.44-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 25241
+    checksum: sha256:0d04c4090baea01e5415389a9587cc9ec5471837fd8cecf3d08946ea8745d1b1
+    name: perl-File-Find
+    evr: 1.44-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-File-stat-1.14-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 16753
+    checksum: sha256:f541d01ff262f1d74550d9f3d7c6458f70ff3827fb2f8ac96f4ad876a5be3de3
+    name: perl-File-stat
+    evr: 1.14-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-FileHandle-2.05-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 15162
+    checksum: sha256:8d8c746126747b4be6ff543dbc18fbc7ce3d61a7df6840b8b7bdaf544e93773e
+    name: perl-FileHandle
+    evr: 2.05-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Getopt-Std-1.14-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 15361
+    checksum: sha256:84a59f1e97d6f4a6a2ca21a3e1df8e40e604be613b5c9528f6584bb6aa3cae3c
+    name: perl-Getopt-Std
+    evr: 1.14-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Git-2.55.0-1.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 38603
+    checksum: sha256:5718eff4f68417fecc063343ea19d597d29bc51e40fda5057bbca7ab863dde94
+    name: perl-Git
+    evr: 2.55.0-1.fc44
+    sourcerpm: git-2.55.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-HTTP-Tiny-0.096-1.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 59181
+    checksum: sha256:f9e5920753c503be84d223bb1ac728cb3981485efb37018b14f14b53821daccd
+    name: perl-HTTP-Tiny
+    evr: 0.096-1.fc44
+    sourcerpm: perl-HTTP-Tiny-0.096-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-IO-1.55-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 83446
+    checksum: sha256:e31de4e37711d0c4dc3ecba9ff17f9875df0162d07fb2fbf35e7f5a6f17b4f95
+    name: perl-IO
+    evr: 1.55-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-IPC-Open3-1.24-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 23787
+    checksum: sha256:c0e9f1ab82f74b55a763e9b3c79475889b4060ed0368f243e780cdc7d2cb0672
+    name: perl-IPC-Open3
+    evr: 1.24-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-NDBM_File-1.18-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 22350
+    checksum: sha256:986e89831fbe2f203821835dca4d5b3def56569e89879699f9b43ac75d078187
+    name: perl-NDBM_File
+    evr: 1.18-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-POSIX-2.23-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 98621
+    checksum: sha256:b02eef07b1e2f70c1d1a99e64f715c0f692fccbcf5b237fb05db0ca52885c77b
+    name: perl-POSIX
+    evr: 2.23-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-SelectSaver-1.02-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 11298
+    checksum: sha256:7620920eda0cb190e477aeb77974c02ce9c20644646f18d75d8a6cf200a1c367
+    name: perl-SelectSaver
+    evr: 1.02-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Socket-2.043-1.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 56742
+    checksum: sha256:53eba6b37f03ef09dc74d513137cdd232416ab1044e711f32f605a53253946f9
+    name: perl-Socket
+    evr: 4:2.043-1.fc44
+    sourcerpm: perl-Socket-2.043-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Symbol-1.09-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 13837
+    checksum: sha256:e5a76800f2bcb03e061458e9a12170ca5057a8c141e49fcbc355394d991f9eff
+    name: perl-Symbol
+    evr: 1.09-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-URI-5.36-1.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 152844
+    checksum: sha256:6a1c96ddc0e77ec6b26a7bca3497246097698376df85fd5ac7b3e59f4ebf2be1
+    name: perl-URI
+    evr: 5.36-1.fc44
+    sourcerpm: perl-URI-5.36-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-base-2.27-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 15899
+    checksum: sha256:2d8dde378a93668b893c74209b799e86c19cd0f94cc10872081b4021fb5dce2d
+    name: perl-base
+    evr: 2.27-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-if-0.61.000-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 13624
+    checksum: sha256:c30eefad789d77b21ee232abd97145b7fa5010bc19d747ec01d07b8cbab2da56
+    name: perl-if
+    evr: 0.61.000-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-interpreter-5.42.3-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 73404
+    checksum: sha256:23ab16d7d3e406f4c614fb51064924ff48790417ec03b59b87a4636ba9281799
+    name: perl-interpreter
+    evr: 4:5.42.3-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-lib-0.65-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 14579
+    checksum: sha256:c569d528a781ba8f654bcf2756c13179e8edb125d6988235daf080e11eb2c3f5
+    name: perl-lib
+    evr: 0.65-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-libs-5.42.3-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 2697854
+    checksum: sha256:c11e77ee048cc4ce93e25ad7a9b3f6db462dfad3e30e3e993c8e0919a5455ec3
+    name: perl-libs
+    evr: 4:5.42.3-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-locale-1.13-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 13115
+    checksum: sha256:e53450b8a1c2bd7ec5e9ca455a6b0a9abf53fbe4415bbf53f17570038b28309b
+    name: perl-locale
+    evr: 1.13-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-mro-1.29-525.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 29820
+    checksum: sha256:32f1909a4a37e8c4ead6c9b6f16c3b3742d3a38a0c5fb74b01d087a3d479d7ac
+    name: perl-mro
+    evr: 1.29-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-overload-1.40-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 45942
+    checksum: sha256:f95f0df8c7aa4fed58d156b021d3e16fa0b665120fe15796da031d9cb2cfa02c
+    name: perl-overload
+    evr: 1.40-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-overloading-0.02-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 12503
+    checksum: sha256:b259a748bf7604057e3afef0401d2881d7d33826f6ca0944a65aef024abb53bc
+    name: perl-overloading
+    evr: 0.02-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-vars-1.05-525.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 12585
+    checksum: sha256:00b9cdf3896a00caaacfe4d1c65875affb62bd9f3f60b0adaf4c8ec0e1bcf8a2
+    name: perl-vars
+    evr: 1.05-525.fc44
+    sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/qtpass-1.7.0-1.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 843936
+    checksum: sha256:5c127a2c58305d6f23e2a68d112cdc5321073c6c1b76d426242f2cc5e831d887
+    name: qtpass
+    evr: 1.7.0-1.fc44
+    sourcerpm: qtpass-1.7.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/tk-9.0.2-2.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 1921819
+    checksum: sha256:69a484f6fba1b2b8d664aaa2409d1c1c28f5e843ad0aaf9e93e763606b4f9bfa
+    name: tk
+    evr: 1:9.0.2-2.fc44
+    sourcerpm: tk-9.0.2-2.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/uv-0.12.9-1.fc44.x86_64.rpm
+    repoid: updates-archive
+    size: 13110425
+    checksum: sha256:e042b953b8104f2ecb250d31c203ef4ecf0d69cfa224a2b366ca3df3763c3747
+    name: uv
+    evr: 0.12.9-1.fc44
+    sourcerpm: uv-0.12.9-1.fc44.src.rpm
+  source: []
+  module_metadata: []
