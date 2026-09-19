@@ -12,11 +12,18 @@
 # the multi-arch index, so amd64 and arm64 both resolve from the one line.
 #
 # One major at a time, because Nextcloud's own `$OC_VersionCanBeUpgradedFrom`
-# in version.php lists exactly the previous major and itself: 34 accepts 33.0
-# and 34.0 and nothing else. The homeserver migrated to 33 on 2026-09-19, which
-# is what makes this bump legal - it could not have been done in one step from
-# the 32 it was on that morning.
-FROM docker.io/library/nextcloud:34.0.4-apache@sha256:a5ace30c695afe48c2c406e940ee7886a81e13fa382e57cd68b2416d1a66914c
+# in version.php lists exactly the previous major and itself: 35 accepts 34.0
+# and 35.0 and nothing else. The homeserver reached 34.0.4 on 2026-09-19, which
+# is what makes this bump legal.
+#
+# **35.0.0 is a .0, and upstream does not recommend it yet.** `production` and
+# `stable` on Docker Hub still resolve to 34.0.4 - read out of the image's own
+# NEXTCLOUD_VERSION, not guessed - while `latest` has moved to 35.0.0. This pin
+# is deliberately ahead of that channel and is not meant to be deployed until
+# it catches up. Re-run `pin_apps.py --verify` when it does: the app feed moves
+# with the platform, so the four pins below are a snapshot of 35.0.0's feed,
+# not of whatever 35.0.x lands.
+FROM docker.io/library/nextcloud:35.0.0-apache@sha256:23c101539e295aaf83888c9c1cae7df3fb6ce80b9ea9310248dad46af8c89936
 
 # exiftool and ffmpeg are what `memories` needs and the base has neither;
 # go-vod it ships itself, per-architecture, inside the app tarball.

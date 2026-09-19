@@ -4,15 +4,21 @@
 # it with `while read`, in a base image that has no Python. pin_apps.py is what
 # rewrites it; nothing generates it during a build.
 #
-# Versions were the ones the NixOS instance served on 2026-09-16, and moved to
-# the newest the Nextcloud 33 feed offered when the base went to 33.0.9. Moving
-# any of them is an edit here and a commit - which is the point.
+# Versions were the ones the NixOS instance served on 2026-09-16, and have moved
+# with the base through 33.0.9 and 34.0.4 since. Moving any of them is an edit
+# here and a commit - which is the point.
 #
-# The same three move on every major and nothing else does. groupfolders,
-# impersonate and richdocuments pin `max-version` to the server they ship
-# against, so each of them is stale the moment the base moves and `occ upgrade`
-# would disable them and not re-enable them. The other six carry a version that
-# satisfies 33 and 34 both, so the 34 bump left them alone.
+# groupfolders, impersonate and richdocuments pin `max-version` to the server
+# they ship against, so all three are stale the moment the base moves and `occ
+# upgrade` would disable them and not re-enable them. dav_push joins them for
+# 35 - the first of its releases to carry a 35 bound. The remaining five have
+# satisfied every platform since 33 unchanged.
+#
+# dav_push is worth a second look on any future major. When the 35 feed first
+# appeared it carried no dav_push release *at all*, which `--verify` reports as
+# `gone` rather than `stale`: there is no version to move to, and baking the
+# pinned one anyway would ship code the server refuses to enable. 1.0.3
+# answered that for 35; the next major is a fresh question.
 #
 # Fifteen of that instance's apps are deliberately absent, dropped in two
 # passes after measuring what each one actually held.
@@ -52,10 +58,10 @@
 # checks that rather than trusting it.
 calendar      6.5.4  67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz
 contacts      8.9.0  06f5da48d70884cef60faaf8bb36a8b2ec22a7bcdb0aecf4970a693614562854 https://github.com/nextcloud-releases/contacts/releases/download/v8.9.0/contacts-v8.9.0.tar.gz
-dav_push      1.0.2  39a7d4806e7cf8bb3189b4bff5a66388e91d41c055df8c44e9c98ef48907314a https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.2/dav_push.tar.gz
-groupfolders  22.0.6 bfff357b12bbd24257d8d127cf30e83a72256e7659f1cc3e32bd09fe647d2f9b https://github.com/nextcloud-releases/groupfolders/releases/download/v22.0.6/groupfolders-v22.0.6.tar.gz
-impersonate   5.0.0  e9b85d6489434af2d05f1618839bcfd9859dbc6b7be580148592f511a448ed66 https://github.com/nextcloud-releases/impersonate/releases/download/v5.0.0/impersonate-v5.0.0.tar.gz
+dav_push      1.0.3  2dbd32346233981fcbb7d615a83aeee5ce5a3d8798d5dd4e0ee56ca031275bd0 https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.3/dav_push.tar.gz
+groupfolders  23.0.1 3949e6a45947188090c170c6983aae11a1d66134ec317ffe7b7609062f3aecf3 https://github.com/nextcloud-releases/groupfolders/releases/download/v23.0.1/groupfolders-v23.0.1.tar.gz
+impersonate   6.0.0  03fe448867e07bf4e6e3dd95f3550f8a07b5c89683a2baf1382b1cd5cf0a17bd https://github.com/nextcloud-releases/impersonate/releases/download/v6.0.0/impersonate-v6.0.0.tar.gz
 notes         6.1.0  03c493f45cb17a5005a0dce91c4e59b294ef91d4520c3ef44a21d5e61e419526 https://github.com/nextcloud-releases/notes/releases/download/v6.1.0/notes-v6.1.0.tar.gz
 notify_push   1.4.1  0bfda35cba6e21bc6358ede431bde790b039efadae54bbb393560fcff6127e36 https://github.com/nextcloud-releases/notify_push/releases/download/v1.4.1/notify_push-v1.4.1.tar.gz
 phonetrack    1.3.5  68a9f2fb216f0f123f760d715c8d2590a93b8a310ec2d91651f0ee19a8986f28 https://github.com/julien-nc/phonetrack/releases/download/v1.3.5/phonetrack-1.3.5.tar.gz
-richdocuments 11.1.1 c4d55f1b1a64a0feaec40ec7a16622cf2e797881771e5e0595147ba84cc93747 https://github.com/nextcloud-releases/richdocuments/releases/download/v11.1.1/richdocuments-v11.1.1.tar.gz
+richdocuments 12.0.0 3ae3fa536d440e06f364ab661331dc7d678d1426ccf8f3d11ffc709ede7b843e https://github.com/nextcloud-releases/richdocuments/releases/download/v12.0.0/richdocuments-v12.0.0.tar.gz
