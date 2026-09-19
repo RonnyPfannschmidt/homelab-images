@@ -23,12 +23,22 @@ Nothing here resolves at build time:
 An app moves when someone moves it:
 
 ```
+./pin_apps.py --verify               # does apps.lock match the Containerfile
 ./pin_apps.py --available            # what the app store has that is newer
 ./pin_apps.py --set calendar=6.2.3   # repin one, rewriting apps.lock
 ./pin_apps.py --check                # re-download every pin, verify every hash
 ```
 
-The build reads `apps.lock` and nothing else. `pin_apps.py` never runs in CI.
+The build reads `apps.lock` and nothing else; nothing here resolves a version
+for you. CI runs exactly one of these, `--verify`, and it writes nothing: it
+asks the app store whether every pinned version is still offered for the
+Nextcloud in the `FROM` line, and fails with the `--set` line that would fix it.
+
+`--verify` is the check that catches a major bump. An app whose `info.xml`
+caps below the new server is absent from that platform's feed while its tarball
+URL keeps working, so the build stays green and `occ upgrade` disables the app
+on the instance afterwards. That is why the rule below — move `apps.lock` and
+the base digest in the same commit — now has something enforcing it.
 
 ## The webroot is baked, and there is no rsync
 
