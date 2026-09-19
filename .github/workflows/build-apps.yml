@@ -132,8 +132,12 @@ jobs:
           echo "$GITHUB_TOKEN" \
             | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      # --pull=false: the base is pinned by digest, so there is nothing to
-      # refresh, and pulling again on every run costs a gigabyte for nothing.
+      # --pull=missing, and it has to be spelled that way. podman 5 reads
+      # --pull=false as `never`, where 4.9 read it as `missing` - so the value
+      # that worked on the old runners fails on a fresh one with `image not
+      # known`, the base having never been fetched. `missing` is what was meant
+      # all along: the base is pinned by digest, so there is nothing to refresh
+      # and re-pulling on every run costs a gigabyte for nothing.
       #
       # --source-date-epoch/--rewrite-timestamp are half of what makes this
       # image reproducible; the Containerfile's archive pin is the other half
@@ -144,7 +148,7 @@ jobs:
       - name: Build
         run: |
           set -x
-          podman build --pull=false \
+          podman build --pull=missing \
             --source-date-epoch "${{ steps.meta.outputs.sde }}" \
             --rewrite-timestamp \
             -t "${{ steps.meta.outputs.primary }}" \
