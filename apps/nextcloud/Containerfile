@@ -11,7 +11,7 @@
 # Pinned by digest, not by tag: 32.0.8-apache is what the box runs today, and
 # the tag will move under it. This digest is the multi-arch index, so amd64 and
 # arm64 both resolve from the one line.
-FROM docker.io/library/nextcloud:32.0.8-apache@sha256:334f45c2e1b5e24a3af184b2c62a5c43028310115069649c2e63ab3d27f2795c
+FROM docker.io/library/nextcloud:32.0.15-apache@sha256:947ac9c635e98236985e3ec3f630a2defa58b8ffa3c3b33a7acdbfd252dafe03
 
 # exiftool and ffmpeg are what `memories` needs and the base has neither;
 # go-vod it ships itself, per-architecture, inside the app tarball.
