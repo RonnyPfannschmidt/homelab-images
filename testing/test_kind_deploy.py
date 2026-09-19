@@ -101,15 +101,22 @@ def _flux_unavailable() -> str | None:
         text=True,
         check=True,
     ).stdout.strip()
+    # `origin/*` and not every remote-tracking ref: on a pull request the
+    # runner also holds `pull/N/merge`, a ref that exists only in that
+    # checkout. Counting it says the commit is fetchable when it is not, and
+    # the test then waits five minutes for a HelmRelease that can never
+    # resolve its source.
     on_remote = subprocess.run(
-        ["git", "branch", "-r", "--contains", head],
+        ["git", "branch", "-r", "--contains", head, "origin/*"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     if not on_remote.stdout.strip():
-        return f"commit {head[:8]} is not on any remote; Flux fetches from {PUBLIC_REPO_URL}"
+        return (
+            f"commit {head[:8]} is not on a branch at origin; Flux fetches from {PUBLIC_REPO_URL}"
+        )
     return None
 
 

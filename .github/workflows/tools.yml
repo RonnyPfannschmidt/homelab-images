@@ -137,6 +137,9 @@ jobs:
   shell:
     name: server side
     runs-on: ubuntu-24.04
+    # This job downloads the manifest the windows job uploads. Without the
+    # dependency the two race, and the loser reports "Artifact not found".
+    needs: powershell
     steps:
       - uses: actions/checkout@v7
 
