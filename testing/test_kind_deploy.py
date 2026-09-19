@@ -172,6 +172,11 @@ def test_flux_joins_a_public_chart_to_private_values(flux: str, tmp_path: Path) 
     private_values = yaml.safe_dump(
         {
             "workloads": {"fichtendorf": {"replicaCount": 0}, "terminal": {"replicaCount": 0}},
+            # The subchart's own lever, which is the one the Deployment reads.
+            # Setting only the parent's leaves the server at one replica -
+            # the exact drift test_subchart_replica_count_matches_the_workload_lever
+            # exists to forbid, and it is just as wrong written here.
+            "minecraft": {"replicaCount": 0},
             "userspace": {"appData": "/tmp/appdata"},
             "server": {"motd": marker},
         }
