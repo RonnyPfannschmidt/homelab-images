@@ -51,7 +51,11 @@ jobs:
       matrix:
         include:
           - image: fedora-basesetup
-            runner: ubuntu-24.04
+            # 26.04 for podman 5: --source-date-epoch and --rewrite-timestamp
+            # below do not exist before it, and 24.04 ships 4.9.3 with no
+            # prospect of newer - runner-images has an open issue about podman
+            # being *downgraded* on 22.04 and 24.04.
+            runner: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,6 +118,11 @@ jobs:
       # The context is the repository root, not the image directory, because
       # every image copies trust/ into itself. .containerignore is what keeps
       # that context from carrying the charts and the test harness.
+      # --source-date-epoch/--rewrite-timestamp are what make this image
+      # reproducible from outside the Containerfile, and the epoch is the
+      # commit's own timestamp so two builds of one commit agree. The
+      # Containerfile's `ARG SOURCE_DATE_EPOCH` picks the same value up, which
+      # is what fixes rpm's INSTALLTIME in the rpmdb.
       - name: Build
         run: |
           set -x
@@ -121,6 +130,8 @@ jobs:
           # emits `-t tag -t tag ...` and each word has to become its own
           # argument. Quoting it would pass one giant tag to podman.
           podman build --pull=always \
+            --source-date-epoch "$(git log -1 --format=%ct)" \
+            --rewrite-timestamp \
             $(for t in ${{ steps.meta.outputs.tags }}; do printf -- '-t %s ' "$t"; done) \
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             --label org.opencontainers.image.revision=${{ github.sha }} \
