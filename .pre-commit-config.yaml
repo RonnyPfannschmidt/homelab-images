@@ -75,8 +75,14 @@ repos:
     # `#!/bin/sh` and `#!/usr/bin/env bash`. Forcing one flags the other's
     # every construct as undefined.
 
-- repo: https://github.com/rhysd/actionlint
-  rev: v1.7.7
+# kjanat's fork, not rhysd's. Upstream has not tagged since v1.7.12 in March
+# 2026 and its last commit is April 2026, so it does not know `ubuntu-26.04` -
+# a label GitHub has made generally available - and fails every runner bump.
+# This is a hard fork, 583 commits ahead with its own release line and rules
+# upstream does not have, so a `rev` bump here can fail on checks that have
+# nothing to do with runner labels.
+- repo: https://github.com/kjanat/actionlint
+  rev: v1.17.0
   hooks:
   - id: actionlint
     # actionlint runs shellcheck over every `run:` block, which is most of what
