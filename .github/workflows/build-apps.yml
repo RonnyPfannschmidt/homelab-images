@@ -184,7 +184,7 @@ jobs:
           echo "digest=$image@$(cat /tmp/digest)" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
 
       # Same two-signature split as build-bootc.yml, and the same reason: the
       # keyless one is the provenance record, the keyed one is what a policy
