@@ -81,11 +81,18 @@ jobs:
         # they are merged into the existing ones, in order, so listing arch
         # only here left a single job that was whichever entry came last. arch
         # has to be a matrix axis; include only attaches the runner to it.
+        #
+        # 26.04, not 24.04, and not a cosmetic bump: --source-date-epoch and
+        # --rewrite-timestamp below need podman 5.x, and 24.04 ships 4.9.3.
+        # It is not waiting to catch up either - runner-images has an open
+        # issue titled "Podman will be downgraded on Ubuntu 22.04 and 24.04
+        # runner images". 26.04 ships 5.7.0 on both architectures, and is
+        # already what the pins and manifest jobs run on.
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +105,12 @@ jobs:
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           image="ghcr.io/$owner/${{ matrix.image }}"
           sha=$(git rev-parse --short HEAD)
+
+          # The commit's own timestamp, and the whole of what makes the build
+          # reproducible from outside the Containerfile. It has to be intrinsic
+          # to the source rather than wall-clock, or two builds of one commit
+          # disagree - which is the property this exists to buy.
+          sde=$(git log -1 --format=%ct)
 
           # Per-architecture tags. The manifest job below is what publishes the
           # names anything actually pulls; these exist so it has something to
@@ -115,6 +128,7 @@ jobs:
             echo "image=$image"
             echo "primary=$primary"
             echo "push=$push"
+            echo "sde=$sde"
           } >> "$GITHUB_OUTPUT"
 
       - name: Log in to ghcr.io
@@ -125,12 +139,25 @@ jobs:
           echo "$GITHUB_TOKEN" \
             | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      # --pull=false: the base is pinned by digest, so there is nothing to
-      # refresh, and pulling again on every run costs a gigabyte for nothing.
+      # --pull=missing, and it has to be spelled that way. podman 5 reads
+      # --pull=false as `never`, where 4.9 read it as `missing` - so the value
+      # that worked on the old runners fails on a fresh one with `image not
+      # known`, the base having never been fetched. `missing` is what was meant
+      # all along: the base is pinned by digest, so there is nothing to refresh
+      # and re-pulling on every run costs a gigabyte for nothing.
+      #
+      # --source-date-epoch/--rewrite-timestamp are half of what makes this
+      # image reproducible; the Containerfile's archive pin is the other half
+      # and neither alone is enough. Without them every layer this build
+      # creates differs run to run, COPY layers included, because podman stamps
+      # build time into each one. The clamp reaches COPY source mtimes too, so
+      # a fresh checkout reproduces. Base layers are passed through untouched.
       - name: Build
         run: |
           set -x
-          podman build --pull=false \
+          podman build --pull=missing \
+            --source-date-epoch "${{ steps.meta.outputs.sde }}" \
+            --rewrite-timestamp \
             -t "${{ steps.meta.outputs.primary }}" \
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             --label org.opencontainers.image.revision=${{ github.sha }} \
