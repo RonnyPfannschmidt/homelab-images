@@ -8,10 +8,16 @@
 # because a public repository builds arm64 for free and publishes without a
 # pull secret.
 
-# Pinned by digest, not by tag: 32.0.8-apache is what the box runs today, and
-# the tag will move under it. This digest is the multi-arch index, so amd64 and
-# arm64 both resolve from the one line.
-FROM docker.io/library/nextcloud:32.0.8-apache@sha256:334f45c2e1b5e24a3af184b2c62a5c43028310115069649c2e63ab3d27f2795c
+# Pinned by digest, not by tag, and the tag will move under it. This digest is
+# the multi-arch index, so amd64 and arm64 both resolve from the one line.
+#
+# 33 is a stop on the way to 34, not a destination. Nextcloud's own
+# `$OC_VersionCanBeUpgradedFrom` in version.php lists exactly the previous
+# major and itself - 34 accepts 33.0 and 34.0 and nothing else - so an instance
+# at 32.0 cannot reach 34 by any image, however new. It migrates to 33, runs,
+# and is then bumped again. Building 34 straight away would produce an image
+# the box refuses to upgrade onto.
+FROM docker.io/library/nextcloud:33.0.9-apache@sha256:98f8db7fa866cf4a8cfabd441731be428f54854caa760bd8e022a03cac77c581
 
 # exiftool and ffmpeg are what `memories` needs and the base has neither;
 # go-vod it ships itself, per-architecture, inside the app tarball.
