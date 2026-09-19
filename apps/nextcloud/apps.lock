@@ -4,16 +4,15 @@
 # it with `while read`, in a base image that has no Python. pin_apps.py is what
 # rewrites it; nothing generates it during a build.
 #
-# Versions were the ones the NixOS instance served on 2026-09-16; on 2026-09-19
-# all nine moved to the newest stable release the Nextcloud 33 feed offers,
-# with the base digest, in one commit. Moving any of them is an edit here and a
-# commit - which is the point.
+# Versions were the ones the NixOS instance served on 2026-09-16, and moved to
+# the newest the Nextcloud 33 feed offered when the base went to 33.0.9. Moving
+# any of them is an edit here and a commit - which is the point.
 #
-# Three of the nine had to move for 33 at all - groupfolders, impersonate and
-# richdocuments cap at 32 in their info.xml, so `occ upgrade` would have
-# disabled them and not re-enabled them. The other six are offered for 33 at
-# the versions that were pinned; they moved because a major hop is where this
-# file is read anyway, not because they had to.
+# The same three move on every major and nothing else does. groupfolders,
+# impersonate and richdocuments pin `max-version` to the server they ship
+# against, so each of them is stale the moment the base moves and `occ upgrade`
+# would disable them and not re-enable them. The other six carry a version that
+# satisfies 33 and 34 both, so the 34 bump left them alone.
 #
 # Fifteen of that instance's apps are deliberately absent, dropped in two
 # passes after measuring what each one actually held.
@@ -51,12 +50,12 @@
 #
 # Every tarball unpacks to exactly one directory named for its app; the build
 # checks that rather than trusting it.
-calendar      6.5.4   67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz
-contacts      8.9.0   06f5da48d70884cef60faaf8bb36a8b2ec22a7bcdb0aecf4970a693614562854 https://github.com/nextcloud-releases/contacts/releases/download/v8.9.0/contacts-v8.9.0.tar.gz
-dav_push      1.0.2   39a7d4806e7cf8bb3189b4bff5a66388e91d41c055df8c44e9c98ef48907314a https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.2/dav_push.tar.gz
-groupfolders  21.0.15 1ecdd644a2e913de8b333560717660f0ba75836309c4463af858e886cdc3a68c https://github.com/nextcloud-releases/groupfolders/releases/download/v21.0.15/groupfolders-v21.0.15.tar.gz
-impersonate   4.0.0   8008ad02e36c44fd446ed3bb55ac866cbfb6225128150b289ab3de8141036ea8 https://github.com/nextcloud-releases/impersonate/releases/download/v4.0.0/impersonate-v4.0.0.tar.gz
-notes         6.1.0   03c493f45cb17a5005a0dce91c4e59b294ef91d4520c3ef44a21d5e61e419526 https://github.com/nextcloud-releases/notes/releases/download/v6.1.0/notes-v6.1.0.tar.gz
-notify_push   1.4.1   0bfda35cba6e21bc6358ede431bde790b039efadae54bbb393560fcff6127e36 https://github.com/nextcloud-releases/notify_push/releases/download/v1.4.1/notify_push-v1.4.1.tar.gz
-phonetrack    1.3.5   68a9f2fb216f0f123f760d715c8d2590a93b8a310ec2d91651f0ee19a8986f28 https://github.com/julien-nc/phonetrack/releases/download/v1.3.5/phonetrack-1.3.5.tar.gz
-richdocuments 10.3.1  c4d6d7ead5d6eb8c94813db18ad1d808884ee932a4569da4535c652779ca893f https://github.com/nextcloud-releases/richdocuments/releases/download/v10.3.1/richdocuments-v10.3.1.tar.gz
+calendar      6.5.4  67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz
+contacts      8.9.0  06f5da48d70884cef60faaf8bb36a8b2ec22a7bcdb0aecf4970a693614562854 https://github.com/nextcloud-releases/contacts/releases/download/v8.9.0/contacts-v8.9.0.tar.gz
+dav_push      1.0.2  39a7d4806e7cf8bb3189b4bff5a66388e91d41c055df8c44e9c98ef48907314a https://github.com/bitfireAT/nc_ext_dav_push/releases/download/v1.0.2/dav_push.tar.gz
+groupfolders  22.0.6 bfff357b12bbd24257d8d127cf30e83a72256e7659f1cc3e32bd09fe647d2f9b https://github.com/nextcloud-releases/groupfolders/releases/download/v22.0.6/groupfolders-v22.0.6.tar.gz
+impersonate   5.0.0  e9b85d6489434af2d05f1618839bcfd9859dbc6b7be580148592f511a448ed66 https://github.com/nextcloud-releases/impersonate/releases/download/v5.0.0/impersonate-v5.0.0.tar.gz
+notes         6.1.0  03c493f45cb17a5005a0dce91c4e59b294ef91d4520c3ef44a21d5e61e419526 https://github.com/nextcloud-releases/notes/releases/download/v6.1.0/notes-v6.1.0.tar.gz
+notify_push   1.4.1  0bfda35cba6e21bc6358ede431bde790b039efadae54bbb393560fcff6127e36 https://github.com/nextcloud-releases/notify_push/releases/download/v1.4.1/notify_push-v1.4.1.tar.gz
+phonetrack    1.3.5  68a9f2fb216f0f123f760d715c8d2590a93b8a310ec2d91651f0ee19a8986f28 https://github.com/julien-nc/phonetrack/releases/download/v1.3.5/phonetrack-1.3.5.tar.gz
+richdocuments 11.1.1 c4d55f1b1a64a0feaec40ec7a16622cf2e797881771e5e0595147ba84cc93747 https://github.com/nextcloud-releases/richdocuments/releases/download/v11.1.1/richdocuments-v11.1.1.tar.gz

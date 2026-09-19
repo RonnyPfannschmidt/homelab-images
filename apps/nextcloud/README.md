@@ -1,6 +1,6 @@
 # nextcloud
 
-Nextcloud 33.0.9 with the 9 apps the homeserver serves, baked in and pinned.
+Nextcloud 34.0.4 with the 9 apps the homeserver serves, baked in and pinned.
 
 `ghcr.io/ronnypfannschmidt/nextcloud:sha-<commit>` — amd64 and arm64 in one
 manifest list. Pin a deployment to a `sha-` tag; `latest` moves.
@@ -14,11 +14,10 @@ with the full app set and nothing has to be configured to find it.
 Nothing here resolves at build time:
 
 - the **base image by digest**, not by tag, in the
-  [Containerfile](Containerfile) — the tag will move under it, and the
-  instance it serves is mid-hop from 32 to 34 (see below);
-- every **app by version and sha256**, in [apps.lock](apps.lock), at the
-  newest stable release the Nextcloud 33 feed offers, minus the fifteen two
-  review passes dropped — `apps.lock`'s own header says which and why.
+  [Containerfile](Containerfile) — the tag will move under it;
+- every **app by version and sha256**, in [apps.lock](apps.lock), at a
+  release the Nextcloud 34 feed offers, minus the fifteen two review passes
+  dropped — `apps.lock`'s own header says which and why.
 
 An app moves when someone moves it:
 
@@ -103,9 +102,9 @@ server version and does not re-enable them.
 
 **And move one major at a time.** `version.php`'s `$OC_VersionCanBeUpgradedFrom`
 names the previous major and the current one, nothing further back, so an
-instance two majors behind cannot be upgraded by a single image — it has to
-run the intermediate one. 33 is that intermediate for the homeserver, which was
-on 32.0.8 when this moved; 34 is a second image and a second migration.
+instance two majors behind cannot be upgraded by a single image — it has to run
+the intermediate one. The homeserver went 32 → 33 → 34 that way on 2026-09-19,
+two images and two migrations, because 34 refuses a 32 database outright.
 
 ## What it does not carry
 
