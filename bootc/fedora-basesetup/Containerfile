@@ -1,32 +1,40 @@
-FROM quay.io/fedora/fedora-silverblue:46@sha256:cfd32a0710e4aef43be643a4e149b2ef3a396f0da42198acd016641bff5758c9
+FROM quay.io/fedora/fedora-silverblue:44@sha256:d60d4e35498c73daa896b6e324843837424a2e5dd132878f53fb5fb515a4b5cd
 
-RUN dnf install -y \
-    # Dev tools
-    uv \
-    stow \
-    # code \
-    # Utilities
-    the_silver_searcher \
-    tree \
-    which \
-    file \
-    jq \
-    # Security
-    pass-otp \
-    pass-audit \
-    gnupg2 \
-    qtpass \
-    # VCS
-    git \
-    gitk \
-    git-annex \
-    # System
-    psmisc \
-    lsof \
-    && dnf clean all \
-    && rm -rf /usr/lib/sysimage/libdnf5/transaction_history.sqlite* \
-              /var/lib/dnf/repos /var/log/dnf5.log \
-              /var/cache/ldconfig/aux-cache
+# rpm stamps a wall-clock INSTALLTIME and INSTALLTID into the rpmdb for every
+# package, and the rpmdb cannot be deleted - it is the one thing in this image
+# that --rewrite-timestamp cannot reach, because it is file content and not an
+# mtime. rpm honours SOURCE_DATE_EPOCH for both, so declaring the ARG is the
+# whole fix: podman populates it from --source-date-epoch, and dnf inherits it.
+ARG SOURCE_DATE_EPOCH
+
+# Every package, pinned by URL and sha256 in rpms.lock.yaml, installed with
+# every repository disabled. The build reaches the network for exactly the
+# bytes the lockfile names and resolves against nothing - so the package set
+# is a property of the committed file, not of what Fedora served this morning.
+#
+# rpms.in.yaml is the input; rpm-lockfile-prototype resolves it against the
+# base image's own rpmdb and writes the lock. Regenerating is a command and a
+# commit, the same shape as apps.lock in the nextcloud image.
+COPY bootc/fedora-basesetup/rpms.lock.yaml /tmp/rpms.lock.yaml
+COPY bootc/fedora-basesetup/rpms_lock.py /tmp/rpms_lock.py
+RUN set -eu; \
+    mkdir -p /tmp/rpms; \
+    python3 /tmp/rpms_lock.py /tmp/rpms.lock.yaml > /tmp/rpms.list; \
+    while read -r sha url; do \
+        f=/tmp/rpms/$(basename "$url"); \
+        curl -fsSL -o "$f" "$url"; \
+        printf '%s  %s\n' "$sha" "$f" > /tmp/rpm.sha256; \
+        sha256sum -c /tmp/rpm.sha256; \
+        rm /tmp/rpm.sha256; \
+    done < /tmp/rpms.list; \
+    set -- /tmp/rpms/*.rpm; \
+    test "$#" = "$(wc -l < /tmp/rpms.list)"; \
+    dnf install -y --disablerepo='*' /tmp/rpms/*.rpm; \
+    dnf clean all; \
+    rm -rf /tmp/rpms /tmp/rpms.list /tmp/rpms.lock.yaml /tmp/rpms_lock.py; \
+    rm -rf /usr/lib/sysimage/libdnf5/transaction_history.sqlite* \
+           /var/lib/dnf/repos /var/log/dnf5.log \
+           /var/cache/ldconfig/aux-cache
 
 # Trust material, shared by every image here and copied from the repository
 # root - which is why this image builds with the root as its context.
