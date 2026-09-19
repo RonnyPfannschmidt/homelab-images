@@ -53,10 +53,17 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize("chart", CHARTS, ids=[c.name for c in CHARTS])
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _helm_is_installed() -> None:
-    if shutil.which("helm") is None:
-        pytest.skip("helm is not installed", allow_module_level=True)
+@pytest.fixture(autouse=True)
+def _helm_is_installed(request: pytest.FixtureRequest) -> None:
+    """Skip the chart tests when helm is missing, and only those.
+
+    This used to be session-scoped and skip at module level, which took the
+    whole suite down with it - so a job that needs none of helm had to install
+    it anyway, or silently run nothing. Every test that shells to helm is
+    parametrised over `chart`; nothing else here needs the binary.
+    """
+    if "chart" in request.fixturenames and shutil.which("helm") is None:
+        pytest.skip("helm is not installed")
 
 
 @pytest.fixture
