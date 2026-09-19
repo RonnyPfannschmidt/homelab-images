@@ -77,10 +77,15 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'tree'
           $nfd = [char]0x0061 + [char]0x0308   # a + combining diaeresis
+          # Each element parenthesised, and not optional: PowerShell binds `,`
+          # tighter than `+`, so `'a' + 'b', 'c' + 'd'` is `'a' + ('b','c') + 'd'`
+          # - one string with the array joined by $OFS, not two elements. That
+          # built a single directory named after all six joined by spaces, and
+          # the tree this job exists to compare was 52 records instead of 307.
           $dirs = @(
-            [char]0x00C4 + 'hre',
-            'B' + [char]0x00FC + 'ro\K' + [char]0x00FC + 'che',
-            'Stra' + [char]0x00DF + 'e',
+            ([char]0x00C4 + 'hre'),
+            ('B' + [char]0x00FC + 'ro\K' + [char]0x00FC + 'che'),
+            ('Stra' + [char]0x00DF + 'e'),
             'a b',
             "NFD-$nfd",
             'zzz'
