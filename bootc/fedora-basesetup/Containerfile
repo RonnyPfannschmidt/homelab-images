@@ -1,3 +1,12 @@
+# The lockfile and its reader, staged so the RUN below can bind-mount them.
+# Neither belongs in the image: a COPY would put both in a layer that a later
+# `rm` cannot take back out, and the running system has no use for either. A
+# bind mount from `scratch` leaves nothing behind and, unlike mounting the
+# build context directly, relabels nothing on the host.
+FROM scratch AS lockfiles
+COPY bootc/fedora-basesetup/rpms.lock.yaml /rpms.lock.yaml
+COPY bootc/fedora-basesetup/rpms_lock.py /rpms_lock.py
+
 FROM quay.io/fedora/fedora-silverblue:44@sha256:d60d4e35498c73daa896b6e324843837424a2e5dd132878f53fb5fb515a4b5cd
 
 # rpm stamps a wall-clock INSTALLTIME and INSTALLTID into the rpmdb for every
@@ -15,11 +24,10 @@ ARG SOURCE_DATE_EPOCH
 # rpms.in.yaml is the input; rpm-lockfile-prototype resolves it against the
 # base image's own rpmdb and writes the lock. Regenerating is a command and a
 # commit, the same shape as apps.lock in the nextcloud image.
-COPY bootc/fedora-basesetup/rpms.lock.yaml /tmp/rpms.lock.yaml
-COPY bootc/fedora-basesetup/rpms_lock.py /tmp/rpms_lock.py
-RUN set -eu; \
+RUN --mount=type=bind,from=lockfiles,target=/lock \
+    set -eu; \
     mkdir -p /tmp/rpms; \
-    python3 /tmp/rpms_lock.py /tmp/rpms.lock.yaml > /tmp/rpms.list; \
+    python3 /lock/rpms_lock.py /lock/rpms.lock.yaml > /tmp/rpms.list; \
     while read -r sha url; do \
         f=/tmp/rpms/$(basename "$url"); \
         curl -fsSL -o "$f" "$url"; \
@@ -31,7 +39,7 @@ RUN set -eu; \
     test "$#" = "$(wc -l < /tmp/rpms.list)"; \
     dnf install -y --disablerepo='*' /tmp/rpms/*.rpm; \
     dnf clean all; \
-    rm -rf /tmp/rpms /tmp/rpms.list /tmp/rpms.lock.yaml /tmp/rpms_lock.py; \
+    rm -rf /tmp/rpms /tmp/rpms.list; \
     rm -rf /usr/lib/sysimage/libdnf5/transaction_history.sqlite* \
            /var/lib/dnf/repos /var/log/dnf5.log \
            /var/cache/ldconfig/aux-cache
