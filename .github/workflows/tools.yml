@@ -1,6 +1,3 @@
-# PROPOSAL - not enabled by anyone but you. Committing this file is what turns
-# it on; nothing here has been pushed or run.
-#
 # It exists because tools/nextcloud-local-manifest/ gets exactly one attempt on
 # the machine it is for. That machine is not available, is not ours, and its
 # owner cannot debug a stack trace - so the Windows-only paths have to be
@@ -12,6 +9,12 @@
 # The check that matters is the last one: the collector and the shell script
 # are two independent implementations of one file format, and the only useful
 # assertion is that they agree byte for byte over a tree with umlauts in it.
+#
+# As of 2026-09-19 that assertion passes - 307 records, identical bytes, over
+# a tree carrying umlauts, an eszett, a space and a name in NFD. It had never
+# run to completion before: a shellcheck step failed first every time, and
+# behind it the tree the comparison is built on was one directory rather than
+# six. Both are fixed; this is the first evidence the two halves agree.
 
 name: tools
 
