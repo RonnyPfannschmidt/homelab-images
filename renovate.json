@@ -26,6 +26,12 @@
       "matchDatasources": ["docker"],
       "matchPackageNames": ["quay.io/fedora/**"],
       "groupName": "fedora base images"
+    },
+    {
+      "description": "Nextcloud majors follow upstream's own production channel, not the highest tag. A major here is an irreversible database migration on a live instance, and a .0 reaches `latest` long before it reaches `production` - 35.0.0 did exactly that. `pin_apps.py --channel` fails when this cap goes stale, so it is raised on purpose rather than remembered.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.io/library/nextcloud"],
+      "allowedVersions": "<35"
     }
   ]
 }

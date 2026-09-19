@@ -58,6 +58,13 @@ jobs:
       - name: Check every pin against the platform it must serve
         run: ./apps/nextcloud/pin_apps.py --verify
 
+      # Separate step, not folded into --verify: this one asks a question about
+      # renovate.json rather than about apps.lock, and a failure here means
+      # "the cap is stale", not "a pin is wrong". Reading them as one result
+      # would make the wrong file the suspect.
+      - name: Check the pinned major is still upstream's production channel
+        run: ./apps/nextcloud/pin_apps.py --channel
+
   build:
     name: ${{ matrix.image }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

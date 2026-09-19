@@ -10,6 +10,7 @@ CI runs one of these, `--verify`, which writes nothing. Everything that moves
 a pin stays a thing someone types.
 
     ./pin_apps.py --verify              does apps.lock match the Containerfile
+    ./pin_apps.py --channel             is the pinned major still upstream's production
     ./pin_apps.py --check               re-download every pin and verify its hash
     ./pin_apps.py --available           what the app store offers that is newer
     ./pin_apps.py --set memories=7.8.2  repin one app, or several
@@ -38,6 +39,25 @@ CONTAINERFILE = HERE / "Containerfile"
 #: image. Read it out of the FROM line rather than repeating it here, where the
 #: two could drift apart without anything noticing.
 _FROM_TAG = re.compile(r"^FROM\s+\S+?:(\d+\.\d+\.\d+)-apache", re.MULTILINE)
+
+#: Upstream publishes its own opinion of what is ready for a live instance, as
+#: a tag. It is not `latest`: 35.0.0 sat on `latest` for days while this still
+#: served 34.0.4. renovate.json caps the major at whatever this says, and
+#: `--channel` is what notices when the cap has gone stale.
+PRODUCTION_TAG = "production-apache"
+REPO = "library/nextcloud"
+REGISTRY = "https://registry-1.docker.io"
+TOKEN_URL = f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{REPO}:pull"
+
+#: Both the OCI and the older Docker spellings, index and single manifest. Ask
+#: for all four: which one comes back depends on how the tag was pushed, and a
+#: request that names only one gets a 404 rather than a conversion.
+MANIFEST_TYPES = (
+    "application/vnd.oci.image.index.v1+json,"
+    "application/vnd.docker.distribution.manifest.list.v2+json,"
+    "application/vnd.oci.image.manifest.v1+json,"
+    "application/vnd.docker.distribution.manifest.v2+json"
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +104,49 @@ def fetch(url: str) -> bytes:
     with urllib.request.urlopen(url) as response:
         data: bytes = response.read()
     return data
+
+
+def registry_get(url: str, token: str, accept: str | None = None) -> bytes:
+    request = urllib.request.Request(url)
+    request.add_header("Authorization", f"Bearer {token}")
+    if accept:
+        request.add_header("Accept", accept)
+    with urllib.request.urlopen(request) as response:
+        data: bytes = response.read()
+    return data
+
+
+def production_version() -> str:
+    """The Nextcloud version upstream's own `production` tag serves today.
+
+    Read out of the image's config rather than inferred from tag names: the
+    floating `34` and `34.0` tags point at this image too, so a tag-name answer
+    would be a major with no patch, and the patch is what the pin carries.
+    """
+    token: str = json.loads(fetch(TOKEN_URL))["token"]
+    url = f"{REGISTRY}/v2/{REPO}/manifests/{PRODUCTION_TAG}"
+    document: dict[str, Any] = json.loads(registry_get(url, token, MANIFEST_TYPES))
+
+    if "manifests" in document:
+        linux_amd64 = [
+            entry
+            for entry in document["manifests"]
+            if entry.get("platform", {}).get("architecture") == "amd64"
+            and entry.get("platform", {}).get("os") == "linux"
+        ]
+        if not linux_amd64:
+            raise SystemExit(f"{PRODUCTION_TAG}: no linux/amd64 entry in the index")
+        url = f"{REGISTRY}/v2/{REPO}/manifests/{linux_amd64[0]['digest']}"
+        document = json.loads(registry_get(url, token, MANIFEST_TYPES))
+
+    blob_url = f"{REGISTRY}/v2/{REPO}/blobs/{document['config']['digest']}"
+    config: dict[str, Any] = json.loads(registry_get(blob_url, token))
+    environment: list[str] = config["config"]["Env"]
+    for item in environment:
+        name, _, value = item.partition("=")
+        if name == "NEXTCLOUD_VERSION":
+            return value
+    raise SystemExit(f"{PRODUCTION_TAG}: no NEXTCLOUD_VERSION in the image config")
 
 
 def single_top_level_dir(payload: bytes) -> str | None:
@@ -248,6 +311,39 @@ def cmd_verify(pins: list[Pin]) -> int:
     return 1
 
 
+def cmd_channel() -> int:
+    """Is the major this image pins still the one upstream calls production.
+
+    renovate.json caps nextcloud below the next major, which is what keeps a
+    `.0` off a live instance. A cap raised by hand has exactly one failure
+    mode - nobody raises it - and this is what removes it: the day upstream
+    promotes the next major to `production`, this goes red, and raising the cap
+    becomes a deliberate act with a database migration attached rather than a
+    Renovate PR that landed nine months early.
+    """
+    pinned = platform_version()
+    upstream = production_version()
+    pinned_major = pinned.split(".")[0]
+    upstream_major = upstream.split(".")[0]
+
+    print(f"pinned      {pinned}")
+    print(f"production  {upstream}  (docker.io/{REPO}:{PRODUCTION_TAG})")
+
+    if pinned_major == upstream_major:
+        print(f"\nBoth on major {pinned_major}; the cap in renovate.json still fits.")
+        return 0
+
+    detail = (
+        f"production now serves {upstream}; the image pins {pinned}. Raise the "
+        f"nextcloud cap in renovate.json to <{int(upstream_major) + 1} and move "
+        f"the base, or hold deliberately and say why here."
+    )
+    print(f"\n{detail}")
+    if os.environ.get("GITHUB_ACTIONS"):
+        print(f"::error file=renovate.json::{detail}")
+    return 1
+
+
 def cmd_set(pins: list[Pin], header: list[str], assignments: list[str]) -> int:
     index = feed()
     by_app = {p.app: p for p in pins}
@@ -268,6 +364,11 @@ def main() -> int:
         "--verify", action="store_true", help="check every pin against the platform's feed"
     )
     group.add_argument("--check", action="store_true", help="verify every pinned hash")
+    group.add_argument(
+        "--channel",
+        action="store_true",
+        help="check the pinned major is still upstream's production channel",
+    )
     group.add_argument("--available", action="store_true", help="report newer releases")
     group.add_argument("--set", nargs="+", metavar="APP=VERSION", help="repin apps")
     args = parser.parse_args()
@@ -277,6 +378,8 @@ def main() -> int:
         return cmd_verify(pins)
     if args.check:
         return cmd_check(pins)
+    if args.channel:
+        return cmd_channel()
     if args.available:
         return cmd_available(pins)
     return cmd_set(pins, header, args.set)
