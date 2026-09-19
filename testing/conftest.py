@@ -38,6 +38,13 @@ FLUX_VERSION = "v2.9.5"
 
 
 def run(*command: str, timeout: int = 600, check: bool = True) -> subprocess.CompletedProcess[str]:
+    # The helm guard sits here, where helm is actually invoked. As a fixture it
+    # had to guess in advance which tests would reach it, and guessed by module
+    # - taking test_trust.py, which needs no binary at all, down with the chart
+    # tests on any machine without helm.
+    if command[0] == "helm" and shutil.which("helm") is None:
+        pytest.skip("helm is not installed")
+
     # check=False is deliberate and explicit: this wrapper inspects returncode
     # itself, below, so that a failure reports the command and its tail.
     result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
@@ -51,19 +58,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Parametrise over the charts by directory name, so failures name one."""
     if "chart" in metafunc.fixturenames:
         metafunc.parametrize("chart", CHARTS, ids=[c.name for c in CHARTS])
-
-
-@pytest.fixture(autouse=True)
-def _helm_is_installed(request: pytest.FixtureRequest) -> None:
-    """Skip the chart tests when helm is missing, and only those.
-
-    This used to be session-scoped and skip at module level, which took the
-    whole suite down with it - so a job that needs none of helm had to install
-    it anyway, or silently run nothing. Every test that shells to helm is
-    parametrised over `chart`; nothing else here needs the binary.
-    """
-    if "chart" in request.fixturenames and shutil.which("helm") is None:
-        pytest.skip("helm is not installed")
 
 
 @pytest.fixture

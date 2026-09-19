@@ -13,13 +13,11 @@ on:
       - main
     paths:
       - apps/**
-      - testing/test_nextcloud_pins.py
       - .containerignore
       - .github/workflows/build-apps.yml
   pull_request:
     paths:
       - apps/**
-      - testing/test_nextcloud_pins.py
       - .containerignore
       - .github/workflows/build-apps.yml
   workflow_dispatch:
@@ -53,14 +51,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
-      # The one place this variable is set. Everywhere else the suite runs,
-      # these skip themselves, so a checkout with no network still goes green.
-      - name: Check every pin against the app store
-        env:
-          NEXTCLOUD_TESTS: '1'
-        run: uv run pytest testing/test_nextcloud_pins.py -v
+      # No uv, and no pytest: the script is stdlib-only, and it is the same
+      # command to run by hand. Under GITHUB_ACTIONS it also annotates the
+      # offending apps.lock lines, so a failure lands on the diff.
+      - name: Check every pin against the platform it must serve
+        run: ./apps/nextcloud/pin_apps.py --verify
 
   build:
     name: ${{ matrix.image }} (${{ matrix.arch }})
