@@ -94,6 +94,12 @@ repos:
   rev: v1.30.1
   hooks:
   - id: zizmor
+    # Everything zizmor grades actionable. The informational tier is
+    # `${{ }}` in `run:` blocks whose values GitHub or this workflow controls -
+    # `steps.*.outputs`, `matrix.*` - and at least one of those is deliberately
+    # unquoted for word splitting, so hoisting it into `env:` would break it.
+    # `--no-progress` is the hook's own default; naming args here replaces it.
+    args: [--no-progress, --min-severity, low]
 
 - repo: https://github.com/hadolint/hadolint
   rev: v2.12.0

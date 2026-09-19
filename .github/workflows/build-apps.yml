@@ -58,7 +58,9 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Work out image name and tags
         id: meta
@@ -73,7 +75,7 @@ jobs:
           primary="$image:sha-$sha-${{ matrix.arch }}"
 
           push=false
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             push=true
           elif [ "${{ inputs.push_to_registry }}" = "true" ]; then
             push=true
@@ -87,9 +89,11 @@ jobs:
 
       - name: Log in to ghcr.io
         if: steps.meta.outputs.push == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GITHUB_TOKEN" \
+            | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       # --pull=false: the base is pinned by digest, so there is nothing to
       # refresh, and pulling again on every run costs a gigabyte for nothing.
@@ -158,12 +162,16 @@ jobs:
         image: [nextcloud]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Log in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GITHUB_TOKEN" \
+            | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       # One name that resolves on both architectures. sha-<commit> is the
       # immutable one to pin a deployment to; latest moves.
@@ -184,15 +192,17 @@ jobs:
           echo "digest=$image@$(cat /tmp/digest)" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Same two-signature split as build-bootc.yml, and the same reason: the
       # keyless one is the provenance record, the keyed one is what a policy
       # can actually require. Signing the manifest list covers both arches.
       - name: Sign (keyless)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GITHUB_TOKEN" \
+            | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           cosign sign --yes "${{ steps.join.outputs.digest }}"
 
       - name: Sign (keyed)

@@ -54,7 +54,9 @@ jobs:
             runner: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # A bootc base is ~1 GB compressed and the runners ship 14 GB of disk.
       - name: Free disk space
@@ -71,10 +73,10 @@ jobs:
           sha=$(git rev-parse --short HEAD)
 
           tags="$image:sha-$sha"
-          case "${{ github.event_name }}" in
+          case "$GITHUB_EVENT_NAME" in
             pull_request) tags="$tags $image:pr-${{ github.event.number }}" ;;
             *)
-              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              if [ "$GITHUB_REF" = "refs/heads/main" ]; then
                 tags="$tags $image:latest"
               else
                 branch=$(echo "${GITHUB_REF#refs/heads/}" | tr -c '[:alnum:]._-' '-')
@@ -85,7 +87,7 @@ jobs:
 
           # Never from a pull request: a fork PR must not reach the registry.
           push=false
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             push=true
           elif [ "${{ inputs.push_to_registry }}" = "true" ]; then
             push=true
@@ -100,9 +102,11 @@ jobs:
 
       - name: Log in to ghcr.io
         if: steps.meta.outputs.push == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GITHUB_TOKEN" \
+            | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       # podman rather than buildx: it is what these Containerfiles are built
       # with by hand, so a green run means the same command works locally.
@@ -153,7 +157,7 @@ jobs:
 
       - name: Install cosign
         if: steps.meta.outputs.push == 'true'
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Sign the digest, not the tags: a tag is a moving target, and signing it
       # by name signs whatever it pointed at when cosign resolved it.
@@ -170,6 +174,8 @@ jobs:
       # requirement at all. Enforcing `bootc upgrade` therefore needs a key.
       - name: Sign (keyless)
         if: steps.meta.outputs.push == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # cosign needs its own login. `podman login` writes to
           # $XDG_RUNTIME_DIR/containers/auth.json; cosign reads the Docker
@@ -177,8 +183,8 @@ jobs:
           # pushes the signature - after the image itself is already in the
           # registry, which makes it look like a signing bug rather than a
           # credential one.
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GITHUB_TOKEN" \
+            | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           echo "signing $digest"
           cosign sign --yes "$digest"
 
@@ -245,7 +251,7 @@ jobs:
         run: podman save --format docker-archive -o /tmp/scan.tar ${{ steps.meta.outputs.primary }}
 
       - name: Scan
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           input: /tmp/scan.tar
           format: sarif
@@ -258,7 +264,7 @@ jobs:
         run: rm -f /tmp/scan.tar
 
       - name: Upload scan to the Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
