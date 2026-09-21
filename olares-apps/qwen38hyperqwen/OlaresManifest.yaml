@@ -1,0 +1,210 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  llminit: 1
+  qwen38hyperqwen: 1
+metadata:
+  name: qwen38hyperqwen
+  # Reuses the qwen3.6 app's icon asset on aamsellem's external host, as the
+  # beellama siblings do: no HyperQwen asset exists there and this chart
+  # publishes no icons.
+  icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, profile switchable without re-download"
+  title: Qwen38 27B HyperQwen
+  version: 1.1.1
+  # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
+  # app as model-serving when its name starts with an engine prefix
+  # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
+  # ai agents / llm. This app's name starts with the model, not the engine, so
+  # the category is the only signal — drop it and the app silently stops being
+  # added to Open WebUI.
+  categories:
+    - AI Agents
+    - LLM Chat
+  bento:
+    family: qwen
+    size_label: "27B"
+    badge: turbo
+    hero:
+      # Deliberately not a t/s figure. Upstream measures 127 tok/s single-user
+      # on an RTX 3090 at CTX=fast; nothing has been measured on this box, and
+      # the beellama charts' rule is that an unmeasured number never ships.
+      value: "DFlash2"
+      label: "speculative decode"
+    specs:
+      - { label: "context", value: "64K" }
+      - { label: "vram", value: "23 GB" }
+    capabilities:
+      tool_calling: true
+      vision:       false
+      audio:        false
+      mtp:          { enabled: true }
+    stack: "vLLM 0.28 patched · W4A16 AutoRound · DFlash2"
+# The engine's own OpenAI-compatible port. `authLevel: internal` means it
+# answers callers inside the cluster (Open WebUI among them) without a session
+# and 302s everything else to Authelia, so this is an API surface for in-cluster
+# consumers and a login wall from outside.
+entrances:
+  - name: qwen38hyperqwen
+    port: 8090
+    host: llminit
+    title: Qwen38 27B HyperQwen
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    openMethod: window
+    authLevel: internal
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 1.1.1
+  upgradeDescription: |
+    v1.1.1: two crashloops the v1.1.0 install walked straight into, both caused by adding llm-init rather than by llm-init itself.
+
+    **The Service named `vllm` broke the engine.** Kubernetes injects legacy Docker-link variables for every Service in a namespace, so publishing one called `vllm` - which this chart must, because that is the host llm-init derives from `ENGINE_KIND` - set `VLLM_PORT=tcp://10.233.42.66:8000` in every pod. vLLM reads `VLLM_PORT` as its own listening port and refused to boot: `VLLM_PORT 'tcp://...' appears to be a URI`. The name llm-init requires is precisely the name that breaks the engine. Fixed with `enableServiceLinks: false` on both pods; nothing here uses the mechanism.
+
+    **One ConfigMap cannot serve both containers.** llm-init validates its entire environment and exits on a variable it has retired, and the engine needs `HF_REPO` for `prepare`. Sharing one `envFrom` gave `HF_REPO: removed; use MODEL_SOURCE=hf://<repo>` and a crashloop. The two now have separate ConfigMaps.
+
+    Also corrected on the way in: the chart validator sums requests as well as limits, and CPU as well as memory, across every container. Adding llm-init broke three bounds at once (`limits.cpu 17 > 16`, `requests.cpu 2200m > 2`, `requests.memory 8448Mi > 8Gi`), so `requiredCpu`, `limitedCpu` and `requiredMemory` now carry the arithmetic in a comment.
+
+    v1.1.0: an entrance that is ready before the model is, so the install can finish.
+
+    v1.0.0 was cancelled by Olares after 31 minutes - `installingCanceled`, "Install canceled. Operation timed out." - because the entrance pointed at the engine, and the engine is not ready until ~21.5 GB has downloaded and been requantized. The beellama siblings never hit this: llm-init answers `/livez` seconds after its pod starts and owns their entrance, so the install completes on *its* readiness. This version does the same.
+
+    It is not the same use of llm-init, though, and the difference is the interesting part. There llm-init is the downloader. Here it cannot be: HyperQwen's image rewrites the checkout in place after fetching it (int8 lm_head, int8 embeddings, int8 MTP module, a 40k calibrated draft head), and llm-init has no concept of that step. So the model stays HyperQwen's job and llm-init is used purely for readiness, the progress dashboard, and the OpenAI/Anthropic proxy once the engine is up.
+
+    Three things had to be measured rather than assumed, all against llm-init v1.7.12:
+
+    - **`MODEL_SOURCE` is required** - it refuses to start with `MODEL_SOURCE: required`. Since it must not download the model twice, it gets `--include config.json`: 15 KB from the same repo, satisfied instantly, and honest about which model this is.
+    - **`ENGINE_URL` no longer exists.** It answers `ENGINE_URL: removed; the engine URL is derived from ENGINE_KIND`.
+    - **With `ENGINE_KIND=vllm` it polls `http://vllm:8000`** - host from the engine kind, port from vLLM's default. `VLLM_PORT` is *not* read, so the beellama charts' `LLAMACPP_PORT` trick has no equivalent. Hence a Service literally named `vllm` on port 8000, targeting the 18020 HyperQwen actually serves on. Confirmed live: `readyz=200` and the proxy returning the engine's own `/v1/models`.
+
+    The engine also keeps a Service under the chart name for anything addressing it directly.
+
+    v1.0.2: an empty ConfigMap value is a variable that is SET, and that killed the v1.0.1 boot.
+
+    The engine reached warmup and then refused to start: `ValueError: To serve at least one request with the model's max seq len (65536), 4.96 GiB KV cache is needed, which is larger than the available KV cache memory (3.63 GiB)`.
+
+    Nothing was wrong with the model, the card or HAMi. v1.0.1 exposed `profile.kvMem` with an empty default and emitted it unconditionally as `KV_MEM: ""`. HyperQwen's launcher reads that pin as `${KV_MEM-5583457484}` - the **bare-hyphen** form, which falls back only when the variable is *unset*, not when it is set and empty. So the chart did not ask for the default 5.2 GiB pin, it asked for "no pin", and vLLM fell back to sizing the pool from `gpu-memory-utilization`, which got 3.63 GiB on this card.
+
+    That is the same pin the v1.0.1 notes called load-bearing for the `CUDA_DEVICE_MEMORY_LIMIT=0` choice, so the regression turned off the thing the HAMi reasoning depends on.
+
+    Fix: every optional knob is now emitted only when it has a value (`{{- with ... }}`). Omitting the key is the only encoding of "not configured" that both `${VAR-x}` and `${VAR:-x}` read the same way. This applies to `maxLen`, `draftTokens`, `dflashTokens`, `kvMem` and `extraArgs`; the always-set knobs (`ctx`, `spec`, `gpuUtil`, ...) are unaffected because the launcher reads those with `:-`.
+
+    Worth knowing for the next knob: `SSE_KEEP_ALIVE` is read with the bare hyphen too, and deliberately - upstream uses set-but-empty to mean "drop the flag entirely". Any new passthrough has to be checked against the launcher rather than assumed.
+
+    v1.0.1: expose the knobs the first install turned out to need, and record why the install itself failed.
+
+    **The v1.0.0 install was cancelled by Olares, not by a crash** - `installingCanceled`, "Install canceled. Operation timed out.", 31 minutes in, with the namespace torn down. The cause is structural and is mine: this chart lets the image's entrypoint run `prepare` inside the serving container, so the app cannot report ready until ~19.5 GB has downloaded and been requantized. The beellama siblings do not hit this because llm-init is a separate, instantly-ready workload that owns the entrance while the engine is still fetching weights - the install completes on llm-init's readiness, not the engine's. This chart has no such workload, so the engine's readiness *is* the install's.
+
+    What saved the attempt is that `/olares/rootfs/Common/hyperqwen/models` is a hostPath outside the namespace: the teardown did not take the weights with it, and `prepare` had already finished the download, the int8 lm_head/embedding/MTP requantization, the 40k draft vocabulary and the fast variant. Only the optional DFlash2 drafter was still missing, and prepare's own completion check excludes it. So a reinstall pays a state check and a ~1 GB fetch rather than the half hour again.
+
+    That makes v1.0.1 installable but does not make it *cold-start* installable. A fresh box, or a change to `model.repo`, walks into the same timeout. The real fix is an always-ready entrance workload beside the engine, and it is not in this version.
+
+    Knobs added, all defaulting to the previous behaviour:
+
+    - **`profile.kvMem`** -> `KV_MEM`. The KV pool in bytes. Exposed because it is the single most important VRAM number here and it was implicit: HyperQwen pins the pool rather than deriving it from `gpu-memory-utilization`, because the V2 runner's profiled activation peak swings ~1 GiB between starts. That pin is also what makes `CUDA_DEVICE_MEMORY_LIMIT=0` safe for a vLLM app - the engine never sizes the pool from what HAMi-core's drifting counter reports, which is the objection that would otherwise make a zero limit worse here than on the llama.cpp siblings.
+    - **`profile.verify`** -> `VERIFY`. The entrypoint's pre-flight aborts the container on any FAIL, which is the right default and also a crashloop with no way out if one check does not survive HAMi's interception.
+    - **`profile.prepare`** -> `PREPARE`.
+
+    v1.0.0: initial release — Qwen3.8 27B served by HyperQwen (https://github.com/syv-ai/HyperQwen), a patch series against a pinned vLLM 0.28.0 plus a model-preparation pipeline, packaged upstream as one image.
+
+    Three things make this app shaped differently from the beellama siblings.
+
+    1. **No llm-init, and no progress dashboard.** llm-init fills the platform-shared HuggingFace hub cache from a MODEL_SOURCE list. HyperQwen needs a `--local-dir` checkout that its own scripts then rewrite in place — int8 lm_head, int8 embeddings, int8 MTP module, a 40k calibrated draft head. A downloader that only fetches cannot produce that, so the image's own idempotent `prepare` owns the step and `kubectl logs` is the progress view on first boot. Budget roughly 21.5 GB and an hour.
+
+    2. **The serving profile is an environment variable, not a chart rewrite.** `/app/resolve_config.sh` validates CTX and SPEC and refuses an unknown value before the engine boots. `prepare` fetches the DFlash2 drafter regardless of which profile is active, so moving between fast/long/huge and mtp/dflash2/off is a `helm upgrade` plus a pod restart with no re-download. Shipped at CTX=fast + SPEC=dflash2 + PREFIX_CACHE=1, which is upstream's recommended single-user configuration and the one every published number was measured with.
+
+    3. **CUDA_DEVICE_MEMORY_LIMIT is 0, not 24300m.** The market's vLLM apps use 24300m to work around Olares defaulting this to "0m". That clears the parse bug but leaves HAMi-core's two abort paths armed, and HAMi-core's usage counter is unsigned and drifts negative under this kind of alloc/free churn. For llama.cpp that shows up as a crash at some later allocation; for vLLM it is worse, because vLLM sizes its KV pool from what cuMemGetInfo reports — a drifted counter is a wrong pool at boot. Zero short-circuits both guards. The HAMi scheduler still reserves nvidia.com/gpumem.
+
+    Not benchmarked on this box. Upstream reports 127 tok/s single-user and ~1,035 tok/s at 64 concurrent on an RTX 3090 at 24 GB; sm_120 is listed as working with reproductions, which is what this box is.
+
+    Known limitation: the image is pinned to `latest` because the project publishes no semver tags — only `latest` and per-commit `sha-<7>`. Repin to a sha- tag once a boot here is confirmed healthy.
+  fullDescription: |
+    Qwen3.8 27B on Olares One via HyperQwen: a patched vLLM 0.28.0 (torch 2.13 /
+    cu130 / Triton 3.7.1) built to serve a 27B model fast on a single 24 GB card.
+    RTX 5090M (24 GB GDDR7, sm_120 Blackwell) + 96 GB DDR5 + Core Ultra 9 275HX.
+
+    Stack:
+      - Image: ghcr.io/syv-ai/hyperqwen:latest (upstream, CUDA 13, nvcc for FlashInfer JIT)
+      - Weights: dbirks/Qwen3.8-27B-W4A16-AutoRound, requantized in place on first
+        boot (int8 lm_head, int8 embeddings, int8 MTP module, 40k draft vocabulary)
+      - Speculative decoding: DFlash2 block drafter — 7 drafts in one
+        non-autoregressive pass plus a path selector
+      - KV cache: bf16 via FlashAttention at CTX=fast; fp8 (long) and KVarN
+        4/2-bit (huge) are one env var away
+      - Context: 64K as shipped; 150K and 240K available without re-downloading
+
+    Profiles are switchable by `helm upgrade`: profile.mode (single/batch),
+    profile.ctx (fast/long/huge), profile.spec (mtp/dflash2/off), plus prefix
+    caching, GPU utilization and draft-token counts.
+
+    Upstream measurements on an RTX 3090: 127 tok/s single-user, 381 tok/s when
+    the answer quotes the prompt, ~1,035 tok/s at 64 concurrent. Nothing measured
+    on this box yet.
+
+    Apache 2.0. Thinking mode with reasoning_effort, and tool calling through
+    vLLM's qwen3_coder parser. First launch downloads and prepares ~21.5 GB.
+
+  developer: ronnypfannschmidt
+  website: https://github.com/syv-ai/HyperQwen
+  sourceCode: https://github.com/syv-ai/HyperQwen
+  submitter: ronnypfannschmidt
+  locale:
+    - en-US
+  license:
+    - text: Apache-2.0
+      url: https://github.com/syv-ai/HyperQwen/blob/main/LICENSE
+
+  accelerator:
+    - mode: nvidia
+      # EVERY figure here is a SUM ACROSS CONTAINERS, requests as well as
+      # limits, and the chart validator rejects the package outright when one
+      # is short. Adding llm-init broke three at once on the first upload:
+      #   sum limits.cpu       17    > limitedCpu 16
+      #   sum requests.cpu     2200m > requiredCpu 2
+      #   sum requests.memory  8448Mi > requiredMemory 8Gi
+      # That is the engine (16 / 2 / 8Gi) plus llm-init (1 / 200m / 256Mi).
+      # The beellama charts only ever document the memory case; the CPU and
+      # requests cases bite exactly the same way.
+      requiredCpu: "3"
+      limitedCpu: "18"
+      requiredMemory: 10Gi
+      # SUM ACROSS CONTAINERS, not one container's limit — the chart validator
+      # rejects the package outright with "sum of container
+      # resources.limits.memory (NNGi) must be <= limitedMemory". One container
+      # at 40Gi here; 44Gi leaves room to nudge it without another rejection.
+      # SUM ACROSS CONTAINERS: llm-init's 2Gi plus the engine's 40Gi.
+      limitedMemory: 44Gi
+      # ~21.5 GB of prepared weights plus the torch.compile / Triton /
+      # FlashInfer caches under /cache.
+      requiredDisk: 30Gi
+      limitedDisk: 60Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+
+  supportArch:
+    - amd64
+permission:
+  appData: true
+  # The chart reads and writes /olares/rootfs/Common/hyperqwen.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `qwen38hyperqwen-shared` and force-enables cross-namespace
+  # access, so other apps reach the engine at
+  # http://qwen38hyperqwen.qwen38hyperqwen-shared:18020/v1. Also makes the
+  # install admin-only, hence spec.onlyAdmin above.
+  shared: true
+  LLMGatewaySupported: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN

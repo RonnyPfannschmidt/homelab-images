@@ -1,0 +1,133 @@
+admin: ""
+bfl:
+  username: ""
+workloads:
+  # The entrance and progress dashboard. Ready in seconds, which is what lets
+  # the Olares install operation finish instead of timing out on the engine.
+  llminit:
+    replicaCount: 1
+  qwen38hyperqwen:
+    replicaCount: 1
+userspace:
+  appData: ""
+  appCache: ""
+  userData: ""
+olaresEnv: {}
+
+model:
+  # The only checkpoint HyperQwen's prepare pipeline knows how to requantize.
+  # prepare.sh hardcodes this repo as its HF_REPO default and derives every
+  # later step from the shard layout it ships, so this is not a swappable
+  # quant the way the beellama charts' GGUF is — changing it means changing
+  # BASE_MODEL_DIR too, and the requant scripts may simply not match.
+  repo: dbirks/Qwen3.8-27B-W4A16-AutoRound
+  # --served-model-name is hardcoded to this in single-user/start_qwen.sh and
+  # batch/start_qwen.sh. Declared here because Open WebUI and opencode name it,
+  # NOT because the chart can change it: overriding this value alone would make
+  # every consumer point at a model id the engine does not advertise.
+  servedName: qwen3.8-27b
+  # ~1 GB on top of the ~19.5 GB base: int4-GPTQ lm_head/MTP plus an
+  # own-output draft vocabulary. start_qwen.sh prefers the `-fast` directory
+  # automatically when it exists, so "0" here is the only way to serve the
+  # plain one. Off only if first-boot download time matters more than decode
+  # speed.
+  fastVariant: "1"
+  # The W4A16 DFlash2 drafter (~1 GB), fetched by prepare regardless of which
+  # profile is active. That is deliberate: it is what makes `profile.spec` a
+  # pure restart-time switch instead of another download. "0" only if the
+  # dflash2 profiles will never be used.
+  dflash2: "1"
+
+# Everything here is read by the image's own launcher from the environment and
+# validated by /app/resolve_config.sh, which refuses an unknown CTX or SPEC
+# *before* the engine boots rather than falling through to a default. So a
+# profile change is a `helm upgrade` plus a pod restart: no re-download, no
+# re-requantization, and a typo fails fast and visibly in the container log.
+profile:
+  # single | batch. One GPU runs one mode at a time. `single` is the
+  # low-latency path (speculative decoding, MAX_SEQS small); `batch` is the
+  # throughput path that upstream measures at ~1,035 tok/s over 64 concurrent
+  # requests. Open WebUI plus one opencode session is the single-user case.
+  mode: single
+  # fast | long | huge, and the axis that actually costs something:
+  #   fast  64K, bf16 KV via FlashAttention  — 127 tok/s single-user upstream
+  #   long  150K, fp8 KV via FlashInfer      — 95-100 tok/s
+  #   huge  200-240K, KVarN 4/2-bit KV       — 67 tok/s mixed, 164 reproducing
+  # `fast` to start because it is the configuration every upstream headline
+  # number was measured with, and the one with the most VRAM headroom on a
+  # 24 GB card — which is what a first boot on this box needs. 64K is below
+  # the 160K the beellama sibling serves; raise to `long` once a boot at
+  # `fast` is confirmed healthy.
+  ctx: fast
+  # mtp | dflash2 | off.
+  #   mtp      Qwen's own MTP head, k drafts chained (the launcher's default)
+  #   dflash2  the DFlash2 block drafter: 7 drafts in ONE non-autoregressive
+  #            pass plus a path selector. Upstream's recommended single-user
+  #            setting and what .env.example ships.
+  #   off      no speculative decoding. Refused-on-typo, not silently ignored:
+  #            older launchers fell through to mtp and an A/B ran two spec-on
+  #            arms.
+  # dflash2 pairs with ctx=fast; past 64K upstream reports it losing to mtp
+  # roughly 2:1 on everything but verbatim reproduction, so a move to
+  # ctx=long should carry spec=mtp with it.
+  spec: dflash2
+  # vLLM prefix caching. Worth it here because the expensive turn against a
+  # long document is the first one, and both Open WebUI and opencode resend a
+  # growing prefix every turn. "1" is what upstream's single-user template
+  # ships. Known bad combination, warned about by the launcher rather than
+  # refused: ctx=huge + spec=mtp + prefixCache=1 returns corrupt
+  # prompt_logprobs.
+  prefixCache: "1"
+  # The single-user default. NOT the batch path's 0.972: the DeltaNet
+  # workspace in the MTP decode path allocates beyond vLLM's startup memory
+  # profile, and upstream's rule of thumb is to keep ~2 GB of VRAM free.
+  # Past ~0.975 the engine OOMs at run time, with an error that never
+  # mentions the cache.
+  gpuUtil: "0.93"
+  # Empty = the per-profile default (65536 fast / 150000 long / 200000 huge).
+  # Set only to pull the ceiling *down*; raising it above what the KV pool
+  # holds fails at run time, not at boot.
+  maxLen: ""
+  # Empty = the per-profile default (4 drafts on fast, 3 on long/huge; 7 for
+  # dflash2's single verify block). DFLASH_TOKENS=15 is upstream's
+  # copy/edit/quote mode — much faster when the answer reuses the prompt, at
+  # the cost of request slots and context headroom.
+  draftTokens: ""
+  # dflash2 only. The launcher reads DFLASH_TOKENS separately from
+  # DRAFT_TOKENS above and gives it precedence over MAX_LEN when picking the
+  # profile's context default, so the two are not interchangeable.
+  dflashTokens: ""
+  # KV pool size in BYTES, passed as vLLM's --kv-cache-memory. Empty = the
+  # launcher's own per-profile pin (5583457484 = 5.2 GiB on fast/long,
+  # 5261334938 = 4.9 GiB on huge).
+  #
+  # Exposed rather than left implicit because it is the single most important
+  # VRAM number in this app, and because it is *pinned bytes, not a fraction*
+  # — which is what makes the CUDA_DEVICE_MEMORY_LIMIT=0 choice in
+  # templates/deployment.yaml safe here. HyperQwen pins it because the V2
+  # runner's profiled activation peak swings ~1 GiB between starts; the side
+  # effect is that vLLM does not size the pool from what cuMemGetInfo reports,
+  # so HAMi-core's drifting usage counter cannot produce a wrong pool at boot.
+  # It is this app's equivalent of the `-fit off` the beellama charts pass.
+  #
+  # Lower it if something else is resident on the card. `sunshine`
+  # (steam-headless) holds ~262 MiB continuously, which already eats a
+  # quarter of the ~1 GiB of spare the upstream budget assumes on a 24 GiB
+  # card.
+  kvMem: ""
+  # Free-form extra vLLM arguments, appended last. Empty by default; the
+  # launcher warns when one of them shadows a control set above.
+  extraArgs: ""
+  # The entrypoint's pre-flight (`verify.sh --no-server`): patches applied,
+  # torch sees a GPU, flashinfer usable, the prepared model's tensors the
+  # shape the config claims. Any FAIL aborts the container rather than
+  # serving something subtly wrong, which is the right default — but it also
+  # means one check that does not survive HAMi's interception turns into a
+  # crashloop with no way out short of editing the chart. Exposed so "0" is a
+  # helm upgrade. Turn it off only with the failing line in hand.
+  verify: "1"
+  # The entrypoint's idempotent model preparation. "1" on every start: it is a
+  # state check measured in seconds once the model is there, and it is what
+  # makes a wiped models volume heal itself instead of crashlooping. "0" only
+  # to prove a boot problem is not prepare's.
+  prepare: "1"

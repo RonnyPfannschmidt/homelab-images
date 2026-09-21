@@ -1,0 +1,462 @@
+---
+# Every knob the image's launcher reads from the environment. Single source of
+# truth is .Values.profile / .Values.model (values.yaml). Nothing here is a
+# vLLM flag: /app/resolve_config.sh turns these into the engine's argv and
+# refuses an unknown CTX or SPEC before anything boots.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperqwen-env
+  namespace: "{{ .Release.Namespace }}"
+data:
+  HF_REPO: "{{ .Values.model.repo }}"
+  FAST_VARIANT: "{{ .Values.model.fastVariant }}"
+  DFLASH2: "{{ .Values.model.dflash2 }}"
+  CTX: "{{ .Values.profile.ctx }}"
+  SPEC: "{{ .Values.profile.spec }}"
+  PREFIX_CACHE: "{{ .Values.profile.prefixCache }}"
+  GPU_UTIL: "{{ .Values.profile.gpuUtil }}"
+  # Every optional knob below is emitted ONLY when it has a value, and that is
+  # load-bearing rather than tidy. A ConfigMap key with an empty string is a
+  # variable that is *set*, and the launcher reads several of them with the
+  # bare-hyphen form `${KV_MEM-<default>}`, which keeps a set-but-empty value
+  # instead of falling back. Emitting `KV_MEM: ""` therefore does not mean "use
+  # the default", it means "unpinned" — and that is exactly how v1.0.1 died:
+  # the 5.2 GiB KV pin silently became GPU_UTIL sizing, which reached 3.63 GiB
+  # against the 4.96 GiB that max_model_len 65536 needs, and the engine refused
+  # to start. Omitting the key is the only encoding of "not configured" that
+  # both `${VAR-x}` and `${VAR:-x}` agree on.
+  {{- with .Values.profile.maxLen }}
+  MAX_LEN: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.profile.draftTokens }}
+  DRAFT_TOKENS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.profile.dflashTokens }}
+  DFLASH_TOKENS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.profile.kvMem }}
+  KV_MEM: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.profile.extraArgs }}
+  EXTRA_ARGS: {{ . | quote }}
+  {{- end }}
+  VERIFY: "{{ .Values.profile.verify }}"
+  PREPARE: "{{ .Values.profile.prepare }}"
+  PORT: "18020"
+
+---
+# llm-init: the app's entrance, and the reason the install can finish.
+#
+# It is NOT the downloader here, which is the one way this differs from the
+# beellama siblings. HyperQwen's image owns the model end to end - download,
+# then an in-place requantization (int8 lm_head, int8 embeddings, int8 MTP
+# module, a 40k calibrated draft head) that llm-init has no concept of. So
+# llm-init gets a 15 KB MODEL_SOURCE it can satisfy instantly and is used for
+# what it is uniquely good at: answering /livez seconds after the pod starts,
+# so entrance readiness - and therefore the Olares install operation - does
+# not wait on the engine.
+#
+# Once the engine is up it also becomes the OpenAI/Anthropic proxy and the
+# progress dashboard, which is what the entrance URL serves to Open WebUI.
+# Runs on default-scheduler with no GPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: llm-init
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.llminit.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: llm-init
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: llm-init
+        app.bytetrade.io/shared-entrance: "true"
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      # Kubernetes injects legacy Docker-link variables for every Service in
+      # the namespace, and this chart has to publish one named `vllm` because
+      # that is the host llm-init derives from ENGINE_KIND. The injection then
+      # sets `VLLM_PORT=tcp://10.233.42.66:8000` in every pod here - and vLLM
+      # reads VLLM_PORT as its own listening port, so the engine died with
+      # `VLLM_PORT 'tcp://...' appears to be a URI`. The service name llm-init
+      # requires is the one that breaks the engine; this switches the whole
+      # mechanism off, which nothing in this chart uses.
+      enableServiceLinks: false
+      initContainers:
+        - name: init-chown
+          image: docker.io/beclab/aboveos-busybox:1.37.0
+          command:
+            - sh
+            - -c
+            - mkdir -p /cache/hf/hub/.locks && chown -R 1000:1000 /cache/hf/hub /run/llm-init || true
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      containers:
+        - name: llm-init
+          image: docker.io/beclab/llm-init:v1.7.12
+          envFrom:
+            - configMapRef:
+                name: hyperqwen-llminit-env
+          env:
+            - name: ENGINE_KIND
+              value: vllm
+            - name: MODEL_SUPPORTS
+              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice"
+            - name: HF_ENDPOINT
+              value: "https://huggingface.co/"
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: HF_HUB_CACHE
+              value: /cache/hf/hub
+            - name: RUN_DIR
+              value: /run/llm-init
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_FORMAT
+              value: json
+            - name: APP_URL
+              value: "{{ .Values.olaresEnv.APP_URL }}"
+          ports:
+            - containerPort: 8090
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8090
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            # /livez, NOT /readyz. readyz stays 503 until the engine
+            # advertises MODEL_NAME, which is exactly the long wait this
+            # workload exists to keep off the install's critical path.
+            httpGet:
+              path: /livez
+              port: 8090
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface
+            type: DirectoryOrCreate
+        - name: run-state
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+      restartPolicy: Always
+      schedulerName: default-scheduler
+---
+# llm-init's environment, deliberately NOT the engine's ConfigMap.
+#
+# They cannot be shared: llm-init validates its whole environment and refuses
+# to start on a variable it has retired. The engine needs `HF_REPO` (prepare
+# reads it); llm-init answers `HF_REPO: removed; use MODEL_SOURCE=hf://<repo>`
+# and exits. One `envFrom` across both containers crashlooped exactly there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperqwen-llminit-env
+  namespace: "{{ .Release.Namespace }}"
+data:
+  # Must equal the engine's --served-model-name exactly: llm-init polls the
+  # engine's /v1/models and only enables its OpenAI data plane once it finds
+  # that string, answering 503 {"code":"not_ready"} forever otherwise.
+  MODEL_NAME: "{{ .Values.model.servedName }}"
+  MODEL_MODE: chat
+  # Required - llm-init refuses to start with `MODEL_SOURCE: required` - but
+  # deliberately tiny. HyperQwen's own `prepare` owns the real ~21.5 GB and
+  # llm-init cannot do the requantization that follows, so pointing this at
+  # the full repo would download everything a second time into a different
+  # cache for nothing. One `--include config.json` (15 KB) from the same repo
+  # satisfies the requirement and keeps the dashboard honest about which model
+  # this is.
+  MODEL_SOURCE: "hf://{{ .Values.model.repo }} --include config.json"
+  PORT: "8090"
+---
+# HyperQwen: patched vLLM 0.28.0 (torch 2.13 / cu130) plus a model-preparation
+# pipeline, both baked into one upstream image. Unlike the beellama siblings
+# there is no llm-init here, and that is forced rather than chosen: llm-init
+# populates the platform-shared HuggingFace *hub cache* from a MODEL_SOURCE
+# list, while HyperQwen needs a `--local-dir` checkout that its own scripts
+# then rewrite in place (int8 lm_head, int8 embeddings, int8 MTP module, a 40k
+# draft head). A downloader that only fetches cannot produce that directory, so
+# the image's own idempotent `prepare` owns the whole step and this app has no
+# progress dashboard — `kubectl logs` is the progress view on first boot.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: hyperqwen
+  name: "{{ .Chart.Name }}"
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.qwen38hyperqwen.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: hyperqwen
+  strategy:
+    # Recreate, never RollingUpdate: one GPU, and a second pod would sit
+    # Pending on nvidia.com/gpumem while the first is told to terminate —
+    # which under RollingUpdate it never is, so the upgrade deadlocks.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: hyperqwen
+        app.bytetrade.io/shared-entrance: "true"
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      # Kubernetes injects legacy Docker-link variables for every Service in
+      # the namespace, and this chart has to publish one named `vllm` because
+      # that is the host llm-init derives from ENGINE_KIND. The injection then
+      # sets `VLLM_PORT=tcp://10.233.42.66:8000` in every pod here - and vLLM
+      # reads VLLM_PORT as its own listening port, so the engine died with
+      # `VLLM_PORT 'tcp://...' appears to be a URI`. The service name llm-init
+      # requires is the one that breaks the engine; this switches the whole
+      # mechanism off, which nothing in this chart uses.
+      enableServiceLinks: false
+      containers:
+        - name: hyperqwen
+          # Built on every push to main by the project's own workflow; the
+          # per-commit tags are ghcr.io/syv-ai/hyperqwen:sha-<7>. `latest` is
+          # pinned here against a moving target on purpose *for now* — the
+          # project ships no semver tags at all, so there is nothing else to
+          # pin to. Replace with a sha- tag once a boot on this box is
+          # confirmed healthy, so a later upstream push cannot change what
+          # this app serves.
+          image: "ghcr.io/syv-ai/hyperqwen:latest"
+          # The image ENTRYPOINT is `bash docker/entrypoint.sh`; the argument
+          # selects what runs. `single`/`batch` both run the idempotent
+          # prepare first (a state check measured in seconds once the model is
+          # there, the ~21.5 GB download plus requantization the first time),
+          # then verify.sh --no-server, which aborts on a missing patch.
+          args: ["{{ .Values.profile.mode }}"]
+          envFrom:
+            - configMapRef:
+                name: hyperqwen-env
+          env:
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: GPU_TYPE
+              value: nvidia
+            # Both "0" = unlimited, carried over from the beellama charts
+            # verbatim because the bug is a property of this box's HAMi-core,
+            # not of any engine. Its per-container usage counter is unsigned
+            # and drifts negative under alloc/free churn; once it does it
+            # reads as ~1.8e19 and beats any positive limit, and both guard
+            # sites (allocator.c oom_check, memory.c cuMemGetInfo_v2)
+            # short-circuit on a zero limit before they can misfire.
+            #
+            # This is where this chart parts company with the market's vLLM
+            # apps, which set CUDA_DEVICE_MEMORY_LIMIT_0=24300m instead. That
+            # clears Olares' "0m" default but leaves both aborts armed, and
+            # the beellama analysis is explicit that a *correct* limit re-arms
+            # them exactly as well as a phantom one — the counter underflows to
+            # ~1.8e19, which beats any positive limit.
+            #
+            # The objection that would normally make a zero limit worse for
+            # vLLM than for llama.cpp — that vLLM sizes its KV pool from what
+            # cuMemGetInfo reports, so a drifted counter is a wrong pool rather
+            # than a late crash — does not apply to this image. HyperQwen pins
+            # the pool in bytes (KV_MEM -> --kv-cache-memory, 5.2 GiB on
+            # fast/long) because the V2 runner's profiled activation peak
+            # swings ~1 GiB between starts. Pinned bytes are not derived from
+            # cuMemGetInfo, which makes the pin this app's `-fit off`.
+            #
+            # A zero limit is also the *more* honest reading of the card here:
+            # sunshine (steam-headless) holds ~262 MiB continuously, and only
+            # the limit==0 path passes the driver's real free number through
+            # for vLLM's startup gate to see. A 24300m limit hides it.
+            #
+            # Expect a startup warning about "invalid device memory limit
+            # CUDA_DEVICE_MEMORY_LIMIT=0": HAMi-core's parser rejects "0" and
+            # falls through to the same zero default. That is the intended
+            # state.
+            - name: CUDA_DEVICE_MEMORY_LIMIT
+              value: "0"
+            - name: CUDA_DEVICE_MEMORY_LIMIT_0
+              value: "0"
+            - name: VLLM_NO_USAGE_STATS
+              value: "1"
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: TZ
+              value: Etc/UTC
+          ports:
+            - containerPort: 18020
+              name: http
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 18020
+              scheme: HTTP
+            # 480 x 15s = 2 h, and the first boot really can want most of it:
+            # ~21.5 GB of downloads, a few minutes of CPU requantization, then
+            # torch.compile plus CUDA-graph capture plus FlashInfer's JIT.
+            # Upstream's compose healthcheck allows a 900 s start period for
+            # the last part alone, against an already-prepared model.
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 480
+          livenessProbe:
+            # Does not run until startupProbe has succeeded, so it does not
+            # need a download-sized initial delay of its own.
+            httpGet:
+              path: /health
+              port: 18020
+              scheme: HTTP
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            limits:
+              cpu: "16"
+              # 40Gi as on the beellama sibling, and for the same reason: the
+              # memcg holds the engine's host allocations AND the page cache
+              # left behind by reading ~21.5 GB of weights off the hostPath.
+              # The 8Gi /dev/shm below is `medium: Memory`, so it counts
+              # against this limit too. Node has 93 GB.
+              memory: 40Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+            requests:
+              cpu: "2"
+              memory: 8Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+          volumeMounts:
+            - mountPath: /app/models
+              name: models
+            - mountPath: /cache
+              name: engine-cache
+            - mountPath: /dev/shm
+              name: dshm
+      volumes:
+        # ~21.5 GB, and writable: prepare rewrites the checkout in place. Kept
+        # under Common rather than the per-user appData so a reinstall, or a
+        # second user's install, does not download it again.
+        - name: models
+          hostPath:
+            path: /olares/rootfs/Common/hyperqwen/models
+            type: DirectoryOrCreate
+        # HOME=/cache in the image. This is the torch.compile, Triton and
+        # FlashInfer JIT cache, and persisting it is the difference between a
+        # ~15-minute and a ~1-minute restart.
+        - name: engine-cache
+          hostPath:
+            path: /olares/rootfs/Common/hyperqwen/cache
+            type: DirectoryOrCreate
+        # Compose runs this image with `ipc: host`. The Kubernetes equivalent
+        # that does not hand the pod the node's IPC namespace is an explicit
+        # shm volume: the default 64 MB /dev/shm is far too small for vLLM,
+        # which fails in ways that read as unrelated CUDA errors.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+      restartPolicy: Always
+      runtimeClassName: nvidia
+      schedulerName: hami-scheduler
+---
+# Entrance service: OlaresManifest entrances[].host resolves this name, and
+# entrance readiness probes it. Pointing it at llm-init rather than at the
+# engine is the whole reason llm-init is here: llm-init answers /livez within
+# seconds of the pod starting, so the *install* completes on its readiness
+# instead of waiting for a ~21.5 GB download plus requantization plus
+# torch.compile. v1.0.0 pointed the entrance at the engine and Olares
+# cancelled the install after 31 minutes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+  type: ClusterIP
+---
+# The engine, under the name llm-init derives for it. Measured, not guessed:
+# with ENGINE_KIND=vllm it polls `http://vllm:8000`, taking the host from the
+# engine kind and the port from vLLM's default. `VLLM_PORT` is NOT read - the
+# beellama charts' `LLAMACPP_PORT` has no vLLM equivalent - and `ENGINE_URL`
+# was removed upstream ("the engine URL is derived from ENGINE_KIND"). So the
+# service is named `vllm`, listens on 8000, and targets the port HyperQwen
+# actually serves on.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: hyperqwen
+spec:
+  selector:
+    io.kompose.service: hyperqwen
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 18020
+  type: ClusterIP
+---
+# The engine under its own name too, for anything addressing the app directly
+# rather than through llm-init's proxy.
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Chart.Name }}"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: hyperqwen
+spec:
+  selector:
+    io.kompose.service: hyperqwen
+  ports:
+    - name: http
+      port: 18020
+      targetPort: 18020
+  type: ClusterIP
