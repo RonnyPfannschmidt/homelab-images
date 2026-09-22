@@ -33,9 +33,9 @@ model:
   # speed.
   fastVariant: "1"
   # The W4A16 DFlash2 drafter (~1 GB), fetched by prepare regardless of which
-  # profile is active. That is deliberate: it is what makes `profile.spec` a
-  # pure restart-time switch instead of another download. "0" only if the
-  # dflash2 profiles will never be used.
+  # profile is active. That is deliberate: it is what makes the profile
+  # switch below a pure restart instead of another download. "0" only if the
+  # `fast` profile will never be used.
   dflash2: "1"
 
 # Everything here is read by the image's own launcher from the environment and
@@ -49,35 +49,12 @@ profile:
   # throughput path that upstream measures at ~1,035 tok/s over 64 concurrent
   # requests. Open WebUI plus one opencode session is the single-user case.
   mode: single
-  # fast | long | huge, and the axis that actually costs something:
-  #   fast  64K, bf16 KV via FlashAttention  — 127 tok/s single-user upstream
-  #   long  150K, fp8 KV via FlashInfer      — 95-100 tok/s
-  #   huge  200-240K, KVarN 4/2-bit KV       — 67 tok/s mixed, 164 reproducing
-  # `fast` to start because it is the configuration every upstream headline
-  # number was measured with, and the one with the most VRAM headroom on a
-  # 24 GB card — which is what a first boot on this box needs. 64K is below
-  # the 160K the beellama sibling serves; raise to `long` once a boot at
-  # `fast` is confirmed healthy.
-  ctx: fast
-  # mtp | dflash2 | off.
-  #   mtp      Qwen's own MTP head, k drafts chained (the launcher's default)
-  #   dflash2  the DFlash2 block drafter: 7 drafts in ONE non-autoregressive
-  #            pass plus a path selector. Upstream's recommended single-user
-  #            setting and what .env.example ships.
-  #   off      no speculative decoding. Refused-on-typo, not silently ignored:
-  #            older launchers fell through to mtp and an A/B ran two spec-on
-  #            arms.
-  # dflash2 pairs with ctx=fast; past 64K upstream reports it losing to mtp
-  # roughly 2:1 on everything but verbatim reproduction, so a move to
-  # ctx=long should carry spec=mtp with it.
-  spec: dflash2
-  # vLLM prefix caching. Worth it here because the expensive turn against a
-  # long document is the first one, and both Open WebUI and opencode resend a
-  # growing prefix every turn. "1" is what upstream's single-user template
-  # ships. Known bad combination, warned about by the launcher rather than
-  # refused: ctx=huge + spec=mtp + prefixCache=1 returns corrupt
-  # prompt_logprobs.
-  prefixCache: "1"
+  # fast | long | huge. NOT read by the launcher directly: it names an entry
+  # in `servingProfiles` below, and it is only the fallback for
+  # `SERVING_PROFILE`, the env Olares Settings can change on a running
+  # install. An unknown name fails the render with the list of valid ones
+  # rather than reaching /app/resolve_config.sh.
+  serving: fast
   # The single-user default. NOT the batch path's 0.972: the DeltaNet
   # workspace in the MTP decode path allocates beyond vLLM's startup memory
   # profile, and upstream's rule of thumb is to keep ~2 GB of VRAM free.
@@ -131,3 +108,46 @@ profile:
   # makes a wiped models volume heal itself instead of crashlooping. "0" only
   # to prove a boot problem is not prepare's.
   prepare: "1"
+
+# The three serving profiles, as data rather than as three env vars that can
+# be combined wrongly. `profile.serving` - or the SERVING_PROFILE env Olares
+# Settings writes over it - names one of these keys, and the ConfigMap emits
+# what it holds.
+#
+# Each entry is a *validated* combination, which is why the axes are not
+# exposed one by one:
+#   - past 64K upstream reports dflash2 losing to mtp roughly 2:1 on
+#     everything but verbatim reproduction, so long and huge carry mtp;
+#   - ctx=huge + spec=mtp + PREFIX_CACHE=1 returns corrupt prompt_logprobs,
+#     and the launcher warns rather than refusing - so huge turns prefix
+#     caching off here instead of shipping the warned-about combination.
+# The escape hatch for a deliberate experiment is EXTRA_ARGS, not a fourth
+# knob.
+#
+# What each costs, upstream's numbers on an RTX 3090 and nothing measured on
+# this box:
+#   fast  64K,      bf16 KV via FlashAttention  127 tok/s single-user
+#   long  150K,     fp8 KV via FlashInfer       95-100 tok/s
+#   huge  200-240K, KVarN 4/2-bit KV            67 tok/s mixed, 164 quoting
+#
+# Switching costs a pod restart and nothing else: `prepare` fetches the
+# DFlash2 drafter whichever profile is active, so no profile is a download.
+#
+# What a switch does invalidate is every consumer that hardcodes the window.
+# `HYPERQWEN_CONTEXT_TOKENS = 65536` in the private repository's
+# `specs/olares_agents.py` is the 64K of `fast`; moving to long or huge
+# without raising it leaves Hermes, opencode and Open WebUI budgeting against
+# a window a third of the real one.
+servingProfiles:
+  fast:
+    ctx: fast
+    spec: dflash2
+    prefixCache: "1"
+  long:
+    ctx: long
+    spec: mtp
+    prefixCache: "1"
+  huge:
+    ctx: huge
+    spec: mtp
+    prefixCache: "0"

@@ -11,9 +11,9 @@ metadata:
   # beellama siblings do: no HyperQwen asset exists there and this chart
   # publishes no icons.
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
-  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, profile switchable without re-download"
+  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, serving profile switchable from Settings"
   title: Qwen38 27B HyperQwen
-  version: 1.1.1
+  version: 1.2.0
   # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
   # app as model-serving when its name starts with an engine prefix
   # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
@@ -57,8 +57,26 @@ entrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.1.1
+  versionName: 1.2.0
   upgradeDescription: |
+    v1.2.0: the serving profile moves into Olares Settings, and the three axes that made it up become one choice.
+
+    Until now `CTX`, `SPEC` and `PREFIX_CACHE` were three independent chart values, so switching context length meant editing the chart, re-packaging and `helm upgrade` - and it meant being free to pick a combination upstream warns about. Two of those combinations are real: past 64K dflash2 loses to mtp roughly 2:1 on everything but verbatim reproduction, and `ctx=huge` + `spec=mtp` + `PREFIX_CACHE=1` returns corrupt `prompt_logprobs` with nothing but a launcher warning.
+
+    So the three collapse into one name, and the names are the only thing exposed:
+
+    - **fast** - 64K, bf16 KV via FlashAttention, DFlash2 drafting, prefix caching on. The shipped default and what every upstream headline number was measured with.
+    - **long** - 150K, fp8 KV via FlashInfer, MTP drafting, prefix caching on.
+    - **huge** - 200-240K, KVarN 4/2-bit KV, MTP drafting, prefix caching **off**.
+
+    `SERVING_PROFILE` is an `editable` + `applyOnChange` env, so the switch is a dropdown in Settings and a pod restart. It costs no download in either direction: `prepare` fetches the DFlash2 drafter whichever profile is active, which is the property that makes this a run-time knob at all.
+
+    `EXTRA_ARGS` is exposed the same way, as the deliberate escape hatch - extra vLLM argv, appended last, for the experiment that no profile covers. It can break the boot; that is what it is for.
+
+    The table lives in `values.yaml` as `servingProfiles`, and an unknown name fails the *render* with the list of valid ones rather than reaching the engine.
+
+    **One thing a profile switch does not update: consumers that hardcode the window.** `HYPERQWEN_CONTEXT_TOKENS = 65536` on the private side is the 64K of `fast`. Moving to long or huge without raising it leaves Hermes, opencode and Open WebUI budgeting against a third of the real context.
+
     v1.1.1: two crashloops the v1.1.0 install walked straight into, both caused by adding llm-init rather than by llm-init itself.
 
     **The Service named `vllm` broke the engine.** Kubernetes injects legacy Docker-link variables for every Service in a namespace, so publishing one called `vllm` - which this chart must, because that is the host llm-init derives from `ENGINE_KIND` - set `VLLM_PORT=tcp://10.233.42.66:8000` in every pod. vLLM reads `VLLM_PORT` as its own listening port and refused to boot: `VLLM_PORT 'tcp://...' appears to be a URI`. The name llm-init requires is precisely the name that breaks the engine. Fixed with `enableServiceLinks: false` on both pods; nothing here uses the mechanism.
@@ -135,9 +153,10 @@ spec:
         4/2-bit (huge) are one env var away
       - Context: 64K as shipped; 150K and 240K available without re-downloading
 
-    Profiles are switchable by `helm upgrade`: profile.mode (single/batch),
-    profile.ctx (fast/long/huge), profile.spec (mtp/dflash2/off), plus prefix
-    caching, GPU utilization and draft-token counts.
+    The serving profile is a dropdown in Olares Settings - fast (64K), long
+    (150K) or huge (240K), each pinning its own KV format and drafter - and a
+    switch costs a pod restart, not a re-download. `EXTRA_ARGS` beside it
+    appends raw vLLM arguments for anything the profiles do not cover.
 
     Upstream measurements on an RTX 3090: 127 tok/s single-user, 381 tok/s when
     the answer quotes the prompt, ~1,035 tok/s at 64 concurrent. Nothing measured
@@ -208,3 +227,44 @@ envs:
     applyOnChange: true
     valueFrom:
       envName: OLARES_USER_HUGGINGFACE_TOKEN
+  # The serving profile as ONE choice rather than the three env vars it
+  # expands to. `values.yaml` holds the expansion (`servingProfiles`); this is
+  # only the name, and `options` is what keeps a combination upstream warns
+  # about out of the UI.
+  #
+  # `editable` + `applyOnChange` is the whole point: Olares rewrites the value
+  # and restarts the workloads, and the engine comes back on the new profile
+  # without a download, because `prepare` fetches the DFlash2 drafter whether
+  # or not the active profile uses it.
+  #
+  # A `default` is declared even though values.yaml has one, because an
+  # undeclared optional env renders as "" rather than absent - the chart falls
+  # back on `profile.serving` for exactly that case.
+  - envName: SERVING_PROFILE
+    required: false
+    editable: true
+    applyOnChange: true
+    type: string
+    default: fast
+    description: >-
+      Context window, KV cache format and speculative decoder as one vetted
+      set. Switching restarts the engine; no model is re-downloaded.
+    options:
+      - title: "Fast — 64K context, bf16 KV, DFlash2 drafting (default)"
+        value: fast
+      - title: "Long — 150K context, fp8 KV, MTP drafting"
+        value: long
+      - title: "Huge — 240K context, KVarN 4/2-bit KV, MTP drafting, no prefix cache"
+        value: huge
+  # The escape hatch, deliberately free-form: vLLM arguments appended after
+  # everything the profile set. The launcher warns when one of them shadows a
+  # control it already emitted, and a bad argument here fails the boot - which
+  # is the trade for not needing a chart edit to try something.
+  - envName: EXTRA_ARGS
+    required: false
+    editable: true
+    applyOnChange: true
+    type: string
+    description: >-
+      Extra vLLM arguments, appended last. Empty unless you are running an
+      experiment; a wrong argument here crashloops the engine.
