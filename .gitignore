@@ -12,3 +12,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+
+# The generated Olares Market source; rebuilt by tools/olares-market and
+# published by the pages workflow.
+/site/
+
+# Worker toolchain; `npx wrangler deploy` installs it on demand.
+node_modules/

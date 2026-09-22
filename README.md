@@ -44,6 +44,18 @@ manifests go in one commit and the directory is renamed.
 
 Until then: change a chart, change its manifest in the same commit.
 
+There is one thing the manifests now also feed, and it is not a public
+listing: [`tools/olares-market/`](tools/olares-market/README.md) renders the
+charts into a *private* market source - four HTTP endpoints, served by a small
+stdlib service that pulls a checkout when a GitHub webhook fires - so the box
+can install and upgrade these apps from the Market UI instead of an uploaded
+tarball. It reads the manifests that are here anyway and adds no obligation to
+them; when the box is reinstalled, it goes with them.
+
+It also means **no helm binary is needed to package a chart**:
+`tools/olares-market/chart_package.py` does it in the standard library, and
+the test suite holds it to rendering what `helm package` renders.
+
 ## Why this repo is separate
 
 It is the public half of a private homelab configuration repository. The split

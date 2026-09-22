@@ -14,6 +14,7 @@ on:
       - main
     paths:
       - olares-apps/**
+      - tools/olares-market/**
       - trust/**
       - testing/**
       - pyproject.toml
@@ -22,6 +23,7 @@ on:
   pull_request:
     paths:
       - olares-apps/**
+      - tools/olares-market/**
       - trust/**
       - testing/**
       - pyproject.toml
