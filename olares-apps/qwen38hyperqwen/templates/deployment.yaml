@@ -3,6 +3,18 @@
 # truth is .Values.profile / .Values.model (values.yaml). Nothing here is a
 # vLLM flag: /app/resolve_config.sh turns these into the engine's argv and
 # refuses an unknown CTX or SPEC before anything boots.
+#
+# CTX, SPEC and PREFIX_CACHE are not written one by one: they are looked up
+# together in `.Values.servingProfiles` under the name the user picked, so the
+# three always move as a validated set. The name comes from Olares Settings
+# (`SERVING_PROFILE`, editable on a running install) and falls back to
+# `.Values.profile.serving` when Settings leaves it empty - which it renders
+# as "", not as absent, so `default` and not `with` is what reads it.
+{{- $wanted := .Values.olaresEnv.SERVING_PROFILE | default .Values.profile.serving }}
+{{- $serving := index .Values.servingProfiles $wanted }}
+{{- if not $serving }}
+  {{- fail (printf "profile %q is not one of: %s" $wanted (keys .Values.servingProfiles | sortAlpha | join ", ")) }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,9 +24,9 @@ data:
   HF_REPO: "{{ .Values.model.repo }}"
   FAST_VARIANT: "{{ .Values.model.fastVariant }}"
   DFLASH2: "{{ .Values.model.dflash2 }}"
-  CTX: "{{ .Values.profile.ctx }}"
-  SPEC: "{{ .Values.profile.spec }}"
-  PREFIX_CACHE: "{{ .Values.profile.prefixCache }}"
+  CTX: {{ $serving.ctx | quote }}
+  SPEC: {{ $serving.spec | quote }}
+  PREFIX_CACHE: {{ $serving.prefixCache | quote }}
   GPU_UTIL: "{{ .Values.profile.gpuUtil }}"
   # Every optional knob below is emitted ONLY when it has a value, and that is
   # load-bearing rather than tidy. A ConfigMap key with an empty string is a
@@ -38,7 +50,7 @@ data:
   {{- with .Values.profile.kvMem }}
   KV_MEM: {{ . | quote }}
   {{- end }}
-  {{- with .Values.profile.extraArgs }}
+  {{- with .Values.olaresEnv.EXTRA_ARGS | default .Values.profile.extraArgs }}
   EXTRA_ARGS: {{ . | quote }}
   {{- end }}
   VERIFY: "{{ .Values.profile.verify }}"
