@@ -4,9 +4,9 @@ A chart package is a gzipped tar whose entries are `<chart name>/…`, and
 nothing about producing one needs a 50 MB Go binary. Doing it here buys two
 things the binary does not:
 
-- **The market server runs where helm is not.** Uberspace is shared hosting;
-  the service that rebuilds the catalog after a `git pull` is stdlib Python
-  and stays that way.
+- **The market server runs where helm is not.** Uberspace is shared hosting:
+  a Python environment is one `venv` away, a 50 MB Go binary in `~/bin` is a
+  thing to notice, update and explain.
 - **Byte-reproducible output.** `helm package` stamps each entry with the
   file's mtime, so two packagings of one commit differ and a rebuild looks
   like a new chart to anything comparing bytes. Everything here is pinned.

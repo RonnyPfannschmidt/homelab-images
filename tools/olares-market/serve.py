@@ -7,8 +7,12 @@ changed. Two POST routes, and they have nothing to do with each other:
     POST /api/v1/applications/info   Olares asking for app records
     POST /hooks/github               GitHub saying a push happened
 
-Everything else is a GET over files. Stdlib only, so it runs on shared
-hosting with no virtualenv and nothing to keep patched but Python itself.
+Everything else is a GET over files. **This file** imports nothing outside
+the standard library - but the generator it shells out to parses YAML, so
+the interpreter this runs under has to have PyYAML in it. That is not a
+detail: `sys.executable` is what the build subprocess inherits, so starting
+the service on a bare system interpreter produces a service that comes up
+healthy and never completes a single build.
 
 **The rebuild never happens on Olares' request path.** A hook signature is
 checked, the response is sent, and the pull runs on a worker thread behind a

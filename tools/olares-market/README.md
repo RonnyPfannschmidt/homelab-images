@@ -81,16 +81,23 @@ running.
 ```bash
 git clone https://github.com/RonnyPfannschmidt/homelab-images ~/olares-market/repo
 openssl rand -hex 32 > ~/olares-market/webhook-secret && chmod 600 ~/olares-market/webhook-secret
+
+# serve.py is standard library; build_market.py and chart_package.py parse
+# YAML. The service and its build subprocess share one interpreter, so the
+# environment is not optional - without it the service comes up healthy and
+# every build dies with ModuleNotFoundError.
+/usr/bin/python3.13 -m venv ~/olares-market/venv
+~/olares-market/venv/bin/pip install pyyaml
 ```
 
 `~/etc/services.d/olares-market.ini`:
 
 ```ini
 [program:olares-market]
-command=/usr/bin/python3.13 %(ENV_HOME)s/olares-market/repo/tools/olares-market/serve.py --state-dir %(ENV_HOME)s/olares-market --port 8099
+command=%(ENV_HOME)s/olares-market/venv/bin/python %(ENV_HOME)s/olares-market/repo/tools/olares-market/serve.py --state-dir %(ENV_HOME)s/olares-market --port 8099
 autostart=true
 autorestart=true
-startsecs=30
+startsecs=5
 stopsignal=INT
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
@@ -109,13 +116,15 @@ Then in the repository's *Settings → Webhooks*: payload URL
 event**. The `ping` GitHub sends on save is answered, so a green tick there
 means the signature is right.
 
+Everything above - the checkout, the secret, the environment, the program
+file, the domain and the route - is what the private repository's
+`specs/uberspace.py` declares, so `fleet` converges it. It is written out
+here because the tool has to be installable without that repository.
+
 The service runs the generator *out of the checkout*, so a push that changes
 `build_market.py` takes effect on the next build. A push that changes
 `serve.py` needs `supervisorctl restart olares-market` — the running process
 is the old file.
-
-The declared side of this — the supervised service and the web backend route
-— lives in the private repository's `specs/uberspace.py`, beside gitea.
 
 ## Packaging without helm
 
