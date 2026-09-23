@@ -1,4 +1,4 @@
-"""Render the charts in `olares-apps/` into a static Olares Market source.
+"""Render the charts in `olares-apps/` into the tree an Olares Market source serves.
 
 An Olares "market source" is four HTTP endpoints, not a Helm repository:
 
@@ -9,12 +9,12 @@ An Olares "market source" is four HTTP endpoints, not a Helm repository:
 
 Three of them are GETs whose response depends on nothing the caller sends, so
 three of them are files. That is what this script writes: a directory that
-GitHub Pages can serve as-is, plus the `catalog.json` the companion Worker in
-`worker/` reads to answer the one POST static hosting cannot. Neither half
-holds state - both are derived from the charts in this repository.
+`serve.py` serves as-is, plus the `catalog.json` it reads to answer the POST.
+Nothing in it is state - all of it is derived from the charts in this
+repository.
 
 The protocol is not documented by upstream. It was read off a working
-third-party source, `aamsellem/olares-one-market`, whose Cloudflare Worker and
+third-party source, `aamsellem/olares-one-market`, whose Worker and
 catalog builder are public; the field shapes, the id derivation and the two
 traps below come from there.
 
@@ -27,7 +27,7 @@ Two traps worth stating, because both fail silently:
   yields zero parsed apps, so a catalog without a ranked `tops` list syncs as
   an empty source and looks like an authentication problem.
 
-Run it with `--out site/`; `--pages-origin` and `--source-url` decide the URLs
+Run it with `--out site/`; `--public-url` and `--source-url` decide the URLs
 the catalog points at, so a fork or a local rehearsal needs no edit here.
 """
 
@@ -92,7 +92,7 @@ def chart_changed_at(chart: Path) -> dt.datetime:
 
     Not `now()`, and that matters more than it looks: `updated_at` is written
     into files that a build publishes, so a clock-derived value makes every
-    rebuild a content change - a Pages deploy per CI run, and a catalog that
+    rebuild a content change - a changed hash per build, and a catalog that
     claims every app was updated this morning. Falls back to the epoch when
     git cannot answer (a tarball export, a shallow clone without history).
     """
@@ -159,7 +159,7 @@ class App:
             return None
         return [value for value in (bento.get("family"), bento.get("badge")) if value]
 
-    def icon(self, pages_origin: str) -> str:
+    def icon(self, public_url: str) -> str:
         """An `icon.png` beside the chart wins; otherwise the manifest's own URL.
 
         Charts in this repository mostly point at an external host they
@@ -167,10 +167,10 @@ class App:
         instead, which is the only way to stop depending on that host.
         """
         if (self.directory / "icon.png").is_file():
-            return f"{pages_origin}/icons/{self.name}.png"
+            return f"{public_url}/icons/{self.name}.png"
         return str(self.metadata.get("icon") or "")
 
-    def summary(self, pages_origin: str) -> dict[str, Any]:
+    def summary(self, public_url: str) -> dict[str, Any]:
         """The catalog row: what the Market grid draws before anything is clicked."""
         categories = self.categories
         return {
@@ -180,7 +180,7 @@ class App:
             "category": categories[0] if categories else "Utilities",
             "categories": categories,
             "description": self.metadata.get("description") or "",
-            "icon": self.icon(pages_origin),
+            "icon": self.icon(public_url),
             "screenshots": None,
             "tags": self.tags,
             "metadata": None,
@@ -188,7 +188,7 @@ class App:
             "updated_at": self.updated_at,
         }
 
-    def detail(self, pages_origin: str) -> dict[str, Any]:
+    def detail(self, public_url: str) -> dict[str, Any]:
         """The full record: the app page, and everything the installer reads."""
         accelerator = (self.spec.get("accelerator") or [{}])[0]
         return {
@@ -197,7 +197,7 @@ class App:
             "name": self.name,
             "cfgType": self.manifest.get("olaresManifest.type") or "app",
             "chartName": self.chart_file,
-            "icon": self.icon(pages_origin),
+            "icon": self.icon(public_url),
             "title": self.metadata.get("title") or self.name,
             "description": self.metadata.get("description") or "",
             "fullDescription": self.spec.get("fullDescription") or "",
@@ -288,7 +288,7 @@ def discover(charts_dir: Path) -> list[App]:
     return apps
 
 
-def build_catalog(apps: Iterable[App], pages_origin: str) -> dict[str, Any]:
+def build_catalog(apps: Iterable[App], public_url: str) -> dict[str, Any]:
     """Everything derived from the charts, with no timestamp of its own.
 
     The hash is over this content, so two builds of one commit agree and a
@@ -296,8 +296,8 @@ def build_catalog(apps: Iterable[App], pages_origin: str) -> dict[str, Any]:
     re-reads the catalog when it moves, so a hash that churned on a clock
     would re-sync every app every few minutes.
     """
-    summaries = {app.id: app.summary(pages_origin) for app in apps}
-    details = {app.id: app.detail(pages_origin) for app in apps}
+    summaries = {app.id: app.summary(public_url) for app in apps}
+    details = {app.id: app.detail(public_url) for app in apps}
     latest = [app.name for app in apps]
     tops = [{"appId": name, "rank": rank} for rank, name in enumerate(latest, start=1)]
     categories = sorted({category for app in apps for category in app.categories})
@@ -481,14 +481,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "site", help="output directory")
     parser.add_argument("--charts", type=Path, default=CHARTS_DIR, help="directory of charts")
     parser.add_argument(
-        "--pages-origin",
+        "--public-url",
         default=MARKET_URL,
         help="where the generated tree will be served from; icon URLs point at it",
     )
     parser.add_argument(
         "--source-url",
         default="",
-        help="the URL added to Olares as the market source; defaults to --pages-origin",
+        help="the URL added to Olares as the market source; defaults to --public-url",
     )
     parser.add_argument(
         "--skip-charts",
@@ -497,9 +497,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    pages_origin = args.pages_origin.rstrip("/")
+    public_url = args.public_url.rstrip("/")
     apps = discover(args.charts)
-    catalog = build_catalog(apps, pages_origin)
+    catalog = build_catalog(apps, public_url)
     # One timestamp for the whole build, and it is the newest chart's own
     # change time rather than the clock - same reason as `chart_changed_at`.
     built_at = max(app.updated_at for app in apps)
@@ -532,11 +532,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_charts:
         package_charts(apps, out)
 
-    (out / "index.html").write_text(render_index(apps, catalog, args.source_url or pages_origin))
-    # Pages otherwise runs the tree through Jekyll, which drops directories
-    # whose name begins with an underscore and can rewrite what it considers
-    # a template. Nothing here wants processing.
-    (out / ".nojekyll").write_text("")
+    (out / "index.html").write_text(render_index(apps, catalog, args.source_url or public_url))
 
     print(f"{len(apps)} apps -> {out} (hash {catalog['hash']})")
     return 0

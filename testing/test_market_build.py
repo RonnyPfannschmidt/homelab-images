@@ -158,8 +158,8 @@ def test_the_build_is_reproducible(build_market: Any, site: Path, tmp_path: Path
     """Two builds of one commit must be byte-identical.
 
     Not tidiness: `updated_at` is published, so a clock-derived value would
-    make every CI run a content change - a Pages deployment per run, and a
-    catalog hash that moves, which is the signal Olares re-syncs on.
+    make every rebuild a content change - a catalog hash that moves, which is
+    the signal Olares re-syncs on.
     """
     again = tmp_path / "again"
     assert build_market.main(["--out", str(again), "--skip-charts"]) == 0
