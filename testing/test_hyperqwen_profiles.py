@@ -124,3 +124,44 @@ def test_every_settings_choice_is_a_profile_the_chart_defines() -> None:
     assert choices == set(chart_values["servingProfiles"])
     assert declared["default"] in choices
     assert chart_values["profile"]["serving"] in choices
+
+
+def llminit_supports(values: Path, *overrides: str) -> set[str]:
+    for obj in yaml.safe_load_all(template(values, *overrides)):
+        if obj and obj.get("kind") == "Deployment" and obj["metadata"]["name"] == "llminit":
+            (container,) = obj["spec"]["template"]["spec"]["containers"]
+            (supports,) = [e["value"] for e in container["env"] if e["name"] == "MODEL_SUPPORTS"]
+            return set(supports.split(","))
+    raise AssertionError("the chart rendered no llminit Deployment")
+
+
+def test_vision_ships_on_with_the_tower_offloaded(values: Path) -> None:
+    """On 24 GB, DFlash2 plus an on-GPU tower OOMs in graph capture upstream.
+
+    So the two knobs ship together; vision without the offload is a boot
+    failure on the default profile, not a slower configuration.
+    """
+    data = engine_env(values)
+    assert (data["VISION"], data["VISION_OFFLOAD"]) == ("1", "1")
+
+
+@pytest.mark.parametrize(("vision", "advertised"), [("1", True), ("0", False)])
+def test_llminit_advertises_vision_only_when_the_engine_serves_it(
+    values: Path, vision: str, advertised: bool
+) -> None:
+    """With VISION=0 the engine refuses every image with a 400."""
+    supports = llminit_supports(values, "--set-string", f"profile.vision={vision}")
+    assert ("supports_vision" in supports) is advertised
+    assert "supports_function_calling" in supports
+
+
+def test_the_engine_image_is_pinned_to_one_upstream_commit(values: Path) -> None:
+    """`latest` lets an upstream push change what this box serves on a restart."""
+    for obj in yaml.safe_load_all(template(values)):
+        if obj and obj.get("kind") == "Deployment" and obj["metadata"]["name"] == "qwen38hyperqwen":
+            (container,) = obj["spec"]["template"]["spec"]["containers"]
+            repo, _, tag = container["image"].rpartition(":")
+            assert repo == "ghcr.io/syv-ai/hyperqwen"
+            assert tag.startswith("sha-"), tag
+            return
+    raise AssertionError("the chart rendered no qwen38hyperqwen Deployment")

@@ -11,9 +11,9 @@ metadata:
   # beellama siblings do: no HyperQwen asset exists there and this chart
   # publishes no icons.
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
-  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, serving profile switchable from Settings"
+  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, image input, serving profile switchable from Settings"
   title: Qwen38 27B HyperQwen
-  version: 1.2.0
+  version: 1.3.0
   # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
   # app as model-serving when its name starts with an engine prefix
   # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
@@ -23,6 +23,7 @@ metadata:
   categories:
     - AI Agents
     - LLM Chat
+    - Vision
   bento:
     family: qwen
     size_label: "27B"
@@ -38,10 +39,10 @@ metadata:
       - { label: "vram", value: "23 GB" }
     capabilities:
       tool_calling: true
-      vision:       false
+      vision:       true
       audio:        false
       mtp:          { enabled: true }
-    stack: "vLLM 0.28 patched · W4A16 AutoRound · DFlash2"
+    stack: "vLLM 0.29 patched · W4A16 AutoRound · DFlash2"
 # The engine's own OpenAI-compatible port. `authLevel: internal` means it
 # answers callers inside the cluster (Open WebUI among them) without a session
 # and 302s everything else to Authelia, so this is an API surface for in-cluster
@@ -57,8 +58,22 @@ entrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.2.0
+  versionName: 1.3.0
   upgradeDescription: |
+    v1.3.0: image input, and the engine pinned to one upstream commit.
+
+    **The image is now `ghcr.io/syv-ai/hyperqwen:sha-73fd65d`, not `latest`.** That is syv-ai/HyperQwen@73fd65d (2026-09-23), the newest build at the time of writing, with manifest digest `sha256:0c14002d…0f4fcc`. From here on an upstream push changes nothing on this box until the tag in `templates/deployment.yaml` is edited. The same build moves the engine from vLLM 0.28.0 to **0.29.0** (syv-ai/HyperQwen#148). The single-user profiles pin `KV_MEM` and upstream reports them unaffected by the version change. Batch mode's `GPU_UTIL=0.972` OOMs on 0.29, but this chart never used that value. The first start after the upgrade pulls ~9.5 GB and recompiles into `/cache` (~15 minutes cold).
+
+    **Vision is on** (`profile.vision: "1"`). The engine keeps the checkpoint's vision tower instead of starting with `--language-model-only`. The tower is already part of the prepared weights (0.858 GiB BF16), so nothing is downloaded or requantized.
+
+    **The tower is offloaded to host RAM** (`profile.visionOffload: "1"`). Its weights sit in pinned host memory and each module is copied to the GPU only for its own forward. Upstream measured that `SPEC=dflash2` + vision does not boot on 24 GB without this: graph capture OOMs on a 960 MiB verify buffer with 787 MiB free. With it on, the full KV pool comes back, at 296 -> 333 ms of encode per large image and bit-exact output.
+
+    **One image per request.** That is upstream's shipped limit, and "per request" covers the whole resent conversation, so a second image in the same chat is refused with a 400. It can be raised through `EXTRA_ARGS` (`--limit-mm-per-prompt '{"image":{"count":N}}'`) at the cost of encoder budget and KV pool, but it has not been measured here.
+
+    **Vision with prefix caching has a known upstream defect on the `huge` path** (syv-ai/HyperQwen#50): a multi-turn chat with a new image every turn answered from the *previous* image once cache hits started landing inside an image's token span. The defect was bisected to the KVarN KV format, and this chart's `huge` profile already runs with prefix caching off. `fast` (bf16 KV) was clean in the reporter's 12-turn run. `long` (fp8 KV) was not tested by anyone.
+
+    llm-init advertises `supports_vision` when vision is on, as the beellama vision siblings do. Nothing in this version has been measured on this box yet.
+
     v1.2.0: the serving profile moves into Olares Settings, and the three axes that made it up become one choice.
 
     Until now `CTX`, `SPEC` and `PREFIX_CACHE` were three independent chart values, so switching context length meant editing the chart, re-packaging and `helm upgrade` - and it meant being free to pick a combination upstream warns about. Two of those combinations are real: past 64K dflash2 loses to mtp roughly 2:1 on everything but verbatim reproduction, and `ctx=huge` + `spec=mtp` + `PREFIX_CACHE=1` returns corrupt `prompt_logprobs` with nothing but a launcher warning.
@@ -139,12 +154,13 @@ spec:
 
     Known limitation: the image is pinned to `latest` because the project publishes no semver tags — only `latest` and per-commit `sha-<7>`. Repin to a sha- tag once a boot here is confirmed healthy.
   fullDescription: |
-    Qwen3.8 27B on Olares One via HyperQwen: a patched vLLM 0.28.0 (torch 2.13 /
+    Qwen3.8 27B on Olares One via HyperQwen: a patched vLLM 0.29.0 (torch 2.13 /
     cu130 / Triton 3.7.1) built to serve a 27B model fast on a single 24 GB card.
     RTX 5090M (24 GB GDDR7, sm_120 Blackwell) + 96 GB DDR5 + Core Ultra 9 275HX.
 
     Stack:
-      - Image: ghcr.io/syv-ai/hyperqwen:latest (upstream, CUDA 13, nvcc for FlashInfer JIT)
+      - Image: ghcr.io/syv-ai/hyperqwen:sha-73fd65d (upstream, pinned to one commit;
+        CUDA 13, nvcc for FlashInfer JIT)
       - Weights: dbirks/Qwen3.8-27B-W4A16-AutoRound, requantized in place on first
         boot (int8 lm_head, int8 embeddings, int8 MTP module, 40k draft vocabulary)
       - Speculative decoding: DFlash2 block drafter — 7 drafts in one
@@ -152,6 +168,8 @@ spec:
       - KV cache: bf16 via FlashAttention at CTX=fast; fp8 (long) and KVarN
         4/2-bit (huge) are one env var away
       - Context: 64K as shipped; 150K and 240K available without re-downloading
+      - Vision: one image per request, up to 2048 image tokens; the vision
+        tower lives in host RAM and visits the GPU only to encode an image
 
     The serving profile is a dropdown in Olares Settings - fast (64K), long
     (150K) or huge (240K), each pinning its own KV format and drafter - and a

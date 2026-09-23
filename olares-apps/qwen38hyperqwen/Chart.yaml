@@ -1,6 +1,6 @@
 apiVersion: v2
-appVersion: '1.2.0'
-description: Qwen3.8 27B on vLLM via HyperQwen — W4A16 AutoRound weights, DFlash2 block drafting, serving profile switchable from Olares Settings
+appVersion: '1.3.0'
+description: Qwen3.8 27B on vLLM via HyperQwen — W4A16 AutoRound weights, DFlash2 block drafting, image input, serving profile switchable from Olares Settings
 name: qwen38hyperqwen
 type: application
-version: '1.2.0'
+version: '1.3.0'
