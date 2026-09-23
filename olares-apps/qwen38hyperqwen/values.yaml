@@ -60,7 +60,14 @@ profile:
   # profile, and upstream's rule of thumb is to keep ~2 GB of VRAM free.
   # Past ~0.975 the engine OOMs at run time, with an error that never
   # mentions the cache.
-  gpuUtil: "0.93"
+  #
+  # 0.90 rather than upstream's 0.93 because this card is shared: ComfyUI sits
+  # on it under Olares TimeSlice, and at 0.93 `long` had ~1.6 GiB above its
+  # budget for the engine's non-PyTorch memory (~0.8 GiB), unprofiled
+  # transients and the other tenant together. Only the MTP profiles (`long`,
+  # `huge`) size their pool from this; each 0.01 is ~0.23 GiB of KV. It is
+  # read once at boot, so it cannot follow ComfyUI loading a model later.
+  gpuUtil: "0.90"
   # Empty = the per-profile default (65536 fast / 150000 long / 200000 huge).
   # Set only to pull the ceiling *down*; raising it above what the KV pool
   # holds fails at run time, not at boot.
