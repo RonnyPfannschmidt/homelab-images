@@ -25,9 +25,7 @@ rather than re-written here.
 
 Every chart here is maintained in this repository. None of them is a public
 Olares Market listing, and the Market is not a constraint on any of them — the
-files that only existed to submit one (`owners`, `i18n/`) are gone. Two of the
-qwen charts began as copies of aamsellem's `olares-one-market` equivalents and
-have since diverged; they are credited in their descriptions, not tracked.
+files that only existed to submit one (`owners`, `i18n/`) are gone.
 
 What each chart still carries is an `OlaresManifest.yaml`, and only for as long
 as the GPU box runs Olares OS: that is how `olares-apps helm-upgrade` installs
