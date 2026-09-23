@@ -30,7 +30,7 @@ CHART = REPO_ROOT / "olares-apps" / "qwen38hyperqwen"
 #: one should have to be deliberate in two places.
 EXPECTED = {
     "fast": {"CTX": "fast", "SPEC": "dflash2", "PREFIX_CACHE": "1"},
-    "long": {"CTX": "long", "SPEC": "mtp", "PREFIX_CACHE": "1"},
+    "long": {"CTX": "long", "SPEC": "mtp", "PREFIX_CACHE": "1", "MAX_SEQS": "2"},
     "huge": {"CTX": "huge", "SPEC": "mtp", "PREFIX_CACHE": "0"},
 }
 
@@ -78,6 +78,12 @@ def test_settings_profile_drives_all_three_axes(profile: str, values: Path) -> N
     data = engine_env(values, "--set", f"olaresEnv.SERVING_PROFILE={profile}")
     for key, expected in EXPECTED[profile].items():
         assert data[key] == expected, f"profile {profile}: {key} is {data[key]!r}"
+
+
+@pytest.mark.parametrize("profile", ["fast", "huge"])
+def test_uncapped_profiles_leave_max_seqs_to_the_launcher(profile: str, values: Path) -> None:
+    """An emitted MAX_SEQS overrides the launcher's per-profile default."""
+    assert "MAX_SEQS" not in engine_env(values, "--set", f"olaresEnv.SERVING_PROFILE={profile}")
 
 
 def test_an_empty_settings_value_falls_back_to_the_chart_default(values: Path) -> None:
@@ -141,17 +147,26 @@ def test_vision_ships_on_with_the_tower_offloaded(values: Path) -> None:
     So the two knobs ship together; vision without the offload is a boot
     failure on the default profile, not a slower configuration.
     """
-    data = engine_env(values)
+    data = engine_env(values)  # the default profile, fast
     assert (data["VISION"], data["VISION_OFFLOAD"]) == ("1", "1")
 
 
-@pytest.mark.parametrize(("vision", "advertised"), [("1", True), ("0", False)])
+@pytest.mark.parametrize("profile", sorted(EXPECTED))
+@pytest.mark.parametrize("master", ["1", "0"])
 def test_llminit_advertises_vision_only_when_the_engine_serves_it(
-    values: Path, vision: str, advertised: bool
+    values: Path, profile: str, master: str
 ) -> None:
     """With VISION=0 the engine refuses every image with a 400."""
-    supports = llminit_supports(values, "--set-string", f"profile.vision={vision}")
-    assert ("supports_vision" in supports) is advertised
+    overrides = (
+        "--set",
+        f"olaresEnv.SERVING_PROFILE={profile}",
+        "--set-string",
+        f"profile.vision={master}",
+    )
+    engine = engine_env(values, *overrides)["VISION"]
+    supports = llminit_supports(values, *overrides)
+    assert engine == master
+    assert ("supports_vision" in supports) is (engine == "1")
     assert "supports_function_calling" in supports
 
 

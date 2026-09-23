@@ -29,9 +29,10 @@ metadata:
     size_label: "27B"
     badge: turbo
     hero:
-      # Deliberately not a t/s figure. Upstream measures 127 tok/s single-user
-      # on an RTX 3090 at CTX=fast; nothing has been measured on this box, and
-      # the beellama charts' rule is that an unmeasured number never ships.
+      # Deliberately not a t/s figure, although one is measured now (137 tok/s
+      # single-stream at 1K on `fast`, 2026-09-23): the number depends on
+      # context length and on how warm the laptop runs, and a hero tile has
+      # no room for either caveat. The table in fullDescription does.
       value: "DFlash2"
       label: "speculative decode"
     specs:
@@ -72,7 +73,11 @@ spec:
 
     **Vision with prefix caching has a known upstream defect on the `huge` path** (syv-ai/HyperQwen#50): a multi-turn chat with a new image every turn answered from the *previous* image once cache hits started landing inside an image's token span. The defect was bisected to the KVarN KV format, and this chart's `huge` profile already runs with prefix caching off. `fast` (bf16 KV) was clean in the reporter's 12-turn run. `long` (fp8 KV) was not tested by anyone.
 
-    llm-init advertises `supports_vision` when vision is on, as the beellama vision siblings do. Nothing in this version has been measured on this box yet.
+    llm-init advertises `supports_vision` when vision is on, as the beellama vision siblings do.
+
+    **`long` is capped at 2 concurrent requests** (`servingProfiles.long.maxSeqs`). It inherited the launcher's default of 8 and ran out of GPU memory at just 2 concurrent 1K requests: a 64 MiB activation with 622 MiB free and the KV cache 11% full, with vision on and off alike. That is upstream's gotcha 35 - allocations that scale with `max_num_seqs` eat the non-KV headroom, and the engine dies on its first real batch rather than at boot. At `MAX_SEQS=2` the same load survived every ladder up to 64K. The MTP profiles size their KV pool from `GPU_UTIL`, not a pinned `KV_MEM`, and ComfyUI shares this card under TimeSlice, which is why the margin is thinner here than on upstream's headless 3090. `huge` keeps the default and was measured only up to 2 streams.
+
+    **Benchmarked on this box**, every profile across context length and concurrency; the table is in the description. Also found while measuring: on Olares 1.12.6, `olares-cli settings apps env set` cannot change `SERVING_PROFILE` for this app, because it writes back the non-editable `HUGGINGFACE_TOKEN` and the whole request is refused with a 400.
 
     v1.2.0: the serving profile moves into Olares Settings, and the three axes that made it up become one choice.
 
@@ -167,18 +172,58 @@ spec:
         non-autoregressive pass plus a path selector
       - KV cache: bf16 via FlashAttention at CTX=fast; fp8 (long) and KVarN
         4/2-bit (huge) are one env var away
-      - Context: 64K as shipped; 150K and 240K available without re-downloading
+      - Context: 64K as shipped; 150K and 200K available without re-downloading
       - Vision: one image per request, up to 2048 image tokens; the vision
         tower lives in host RAM and visits the GPU only to encode an image
 
     The serving profile is a dropdown in Olares Settings - fast (64K), long
-    (150K) or huge (240K), each pinning its own KV format and drafter - and a
-    switch costs a pod restart, not a re-download. `EXTRA_ARGS` beside it
-    appends raw vLLM arguments for anything the profiles do not cover.
+    (150K, at most 2 requests at a time) or huge (200K), each with its own KV
+    format and drafter - and a switch costs a pod restart, not a re-download.
+    `EXTRA_ARGS` beside it appends raw vLLM arguments for anything the profiles
+    do not cover.
 
-    Upstream measurements on an RTX 3090: 127 tok/s single-user, 381 tok/s when
-    the answer quotes the prompt, ~1,035 tok/s at 64 concurrent. Nothing measured
-    on this box yet.
+    Measured on this box (2026-09-23, chart v1.3.0, vision on, single mode):
+    upstream's bench/conc_ladder.py run inside the pod, distinct prompts per
+    stream so nothing comes from the prefix cache, 256 output tokens, thinking
+    off, 2 repetitions. tok/s per stream / all streams combined, then time to
+    first token. * = the streams never all decoded at once (they queued), so
+    the combined figure is a tail, not a steady state.
+
+      fast (bf16 KV, DFlash2)
+        1K     1 stream  137 / 137   0.6 s     4 streams   85 / 380   2.4 s
+               2 streams 126 / 252   1.3 s     8 streams   63 / 243*  4.8 s
+        16K    1 stream  128 / 128  12.6 s     2 streams   64 / 210  21 s
+        32K    1 stream  100 / 100  30 s
+        60K    1 stream   92 /  92  62 s
+      long (fp8 KV, MTP)
+        1K     1 stream  116 / 116   0.6 s     2 streams  109 / 231   1.2 s
+        16K    1 stream  114 / 114  11.6 s     2 streams   64 / 213  20 s
+        64K    1 stream   96 /  96  71 s       2 streams   44 / 181 109 s
+        125K   1 stream   88 /  88 170 s
+      huge (KVarN 4/2-bit KV, MTP)
+        1K     1 stream  103 / 104   0.7 s     2 streams   97 / 191   1.4 s
+        16K    1 stream   91 /  91  12.6 s
+        64K    1 stream   56 /  56  69 s
+        190K   1 stream   32 /  32 287 s
+
+    What the numbers say:
+      - Reading the prompt, not writing the answer, is the cost of context:
+        about 1,000-1,400 prompt tokens/s up to 64K, falling to ~660 at 190K.
+        A 16K prompt waits ~12 s for its first token on every profile.
+      - fast writes fastest at every length it can hold. long is the better
+        choice past 64K (88 tok/s at 125K); huge only for prompts beyond 150K,
+        and at a real cost (32 tok/s at 190K).
+      - A second stream roughly doubles combined throughput on short prompts.
+        From 16K up, one stream's answer is finished before the other's
+        prompt is read, so streams mostly take turns.
+      - Images: one 1280x800 screenshot adds ~0.4-0.9 s to the first token,
+        1920x1080 ~0.7-1.7 s. Read correctly on all three profiles.
+
+    Read these against the hardware: the RTX 5090 Laptop GPU drew ~100-120 W
+    of its 175 W and ran at ~1,650 MHz under a software thermal slowdown
+    (86-87 C). Decode is bandwidth-bound and on par with upstream's 250 W
+    RTX 3090 (127 tok/s single-stream there, 137 here); prompt reading is
+    compute-bound and would gain most from cooler running.
 
     Apache 2.0. Thinking mode with reasoning_effort, and tool calling through
     vLLM's qwen3_coder parser. First launch downloads and prepares ~21.5 GB.
@@ -270,7 +315,7 @@ envs:
     options:
       - title: "Fast — 64K context, bf16 KV, DFlash2 drafting (default)"
         value: fast
-      - title: "Long — 150K context, fp8 KV, MTP drafting"
+      - title: "Long — 150K context, fp8 KV, MTP drafting, 2 requests at a time"
         value: long
       - title: "Huge — 240K context, KVarN 4/2-bit KV, MTP drafting, no prefix cache"
         value: huge

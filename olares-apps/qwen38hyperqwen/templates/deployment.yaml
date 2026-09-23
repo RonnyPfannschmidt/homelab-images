@@ -15,6 +15,7 @@
 {{- if not $serving }}
   {{- fail (printf "profile %q is not one of: %s" $wanted (keys .Values.servingProfiles | sortAlpha | join ", ")) }}
 {{- end }}
+{{- $vision := eq (toString .Values.profile.vision) "1" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -41,6 +42,9 @@ data:
   {{- with .Values.profile.maxLen }}
   MAX_LEN: {{ . | quote }}
   {{- end }}
+  {{- with $serving.maxSeqs }}
+  MAX_SEQS: {{ . | quote }}
+  {{- end }}
   {{- with .Values.profile.draftTokens }}
   DRAFT_TOKENS: {{ . | quote }}
   {{- end }}
@@ -53,7 +57,7 @@ data:
   {{- with .Values.olaresEnv.EXTRA_ARGS | default .Values.profile.extraArgs }}
   EXTRA_ARGS: {{ . | quote }}
   {{- end }}
-  VISION: "{{ .Values.profile.vision }}"
+  VISION: {{ ternary "1" "0" $vision | quote }}
   VISION_OFFLOAD: "{{ .Values.profile.visionOffload }}"
   VERIFY: "{{ .Values.profile.verify }}"
   PREPARE: "{{ .Values.profile.prepare }}"
@@ -130,11 +134,11 @@ spec:
           env:
             - name: ENGINE_KIND
               value: vllm
-            # supports_vision follows profile.vision rather than being written
-            # out: with VISION=0 the engine refuses every image with a 400
+            # supports_vision follows the engine's VISION rather than being
+            # written out: with VISION=0 the engine refuses every image with a 400
             # ("At most 0 image(s)"), and advertising it would invite them.
             - name: MODEL_SUPPORTS
-              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice{{ if eq (toString .Values.profile.vision) "1" }},supports_vision{{ end }}"
+              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice{{ if $vision }},supports_vision{{ end }}"
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN

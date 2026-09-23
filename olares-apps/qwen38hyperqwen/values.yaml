@@ -75,8 +75,10 @@ profile:
   # profile's context default, so the two are not interchangeable.
   dflashTokens: ""
   # KV pool size in BYTES, passed as vLLM's --kv-cache-memory. Empty = the
-  # launcher's own per-profile pin (5583457484 = 5.2 GiB on fast/long,
-  # 5261334938 = 4.9 GiB on huge).
+  # launcher's own pin, which exists only on the DFlash2 path: 5583457484
+  # (5.2 GiB) on `fast`. The MTP profiles (`long`, `huge`) ignore this and
+  # size the pool from GPU_UTIL - read off their boot logs on 2026-09-23,
+  # which carry no kv_cache_memory_bytes at all.
   #
   # Exposed rather than left implicit because it is the single most important
   # VRAM number in this app, and because it is *pinned bytes, not a fraction*
@@ -113,7 +115,8 @@ profile:
   # 787 MiB free, because the tower takes 0.85 GiB of a ~1.1 GiB margin. With
   # it on, that config boots with the full KV pool. Cost: 296 -> 333 ms of
   # encode per 8192-patch image, output bit-exact (upstream, RTX 3090, PCIe 4.0 x16).
-  # `sunshine` already holds ~262 MiB of that margin here.
+  # Another GPU app already holds part of that margin here: ComfyUI, 318 MiB
+  # idle on 2026-09-23.
   visionOffload: "1"
   # The entrypoint's pre-flight (`verify.sh --no-server`): patches applied,
   # torch sees a GPU, flashinfer usable, the prepared model's tensors the
@@ -158,6 +161,17 @@ profile:
 # `specs/olares_agents.py` is the 64K of `fast`; moving to long or huge
 # without raising it leaves Hermes, opencode and Open WebUI budgeting against
 # a window a third of the real one.
+#
+# `maxSeqs` caps concurrent requests (MAX_SEQS) where the launcher's default
+# is more than this card holds; empty = the launcher's own default. `long`
+# defaults to 8 and died at 2 concurrent 1K requests (2026-09-23): a 64 MiB
+# activation with 622 MiB free, KV cache 11% full, vision on or off alike. At
+# MAX_SEQS=2 the same load survived, soak included. Upstream documents this
+# (gotchas.md 35): per-seat allocations scale with max_num_seqs itself, and
+# the engine dies on its first real batch when non-KV headroom runs out. The
+# MTP profiles (long, huge) size their KV pool from GPU_UTIL rather than a
+# pinned KV_MEM, and ComfyUI shares this card under TimeSlice, so that
+# headroom is thinner here than on upstream's headless 3090.
 servingProfiles:
   fast:
     ctx: fast
@@ -167,6 +181,7 @@ servingProfiles:
     ctx: long
     spec: mtp
     prefixCache: "1"
+    maxSeqs: "2"
   huge:
     ctx: huge
     spec: mtp
