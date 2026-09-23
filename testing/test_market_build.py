@@ -73,6 +73,17 @@ def test_every_chart_reaches_the_catalog(site: Path) -> None:
     assert {app["name"] for app in catalog["summaries"].values()} == charts
 
 
+def test_the_landing_page_names_the_live_source_url(site: Path) -> None:
+    """The service runs the build with no URL flags, so the default is live.
+
+    It used to be a GitHub Pages address from a design that was never
+    deployed, and the page told readers to add a source that did not exist.
+    """
+    landing = (site / "index.html").read_text()
+    assert "<code>https://olares-market.ronnypfannschmidt.de</code>" in landing
+    assert "github.io" not in landing
+
+
 def test_the_syncer_can_enumerate_the_apps(site: Path) -> None:
     """`tops` is what the Go parser iterates; the flat dict alone yields zero.
 

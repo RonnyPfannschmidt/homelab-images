@@ -470,13 +470,19 @@ olares-cli market install &lt;app&gt; -s upload</code></pre>
 """
 
 
+#: Where `serve.py` answers on uberspace, and so the URL to add in Olares.
+#: The service passes no URL flags to this script, so the default is what the
+#: live landing page shows.
+MARKET_URL = "https://olares-market.ronnypfannschmidt.de"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "site", help="output directory")
     parser.add_argument("--charts", type=Path, default=CHARTS_DIR, help="directory of charts")
     parser.add_argument(
         "--pages-origin",
-        default="https://ronnypfannschmidt.github.io/homelab-images",
+        default=MARKET_URL,
         help="where the generated tree will be served from; icon URLs point at it",
     )
     parser.add_argument(
