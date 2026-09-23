@@ -45,7 +45,7 @@ uv run python tools/olares-market/build_market.py --out site
 uv run pytest testing/test_market_build.py testing/test_market_serve.py
 ```
 
-`--skip-charts` writes the JSON without the tarballs. `--pages-origin` and
+`--skip-charts` writes the JSON without the tarballs. `--public-url` and
 `--source-url` decide the URLs the catalog and the landing page carry.
 
 ## Two POSTs, and they are not related
