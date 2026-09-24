@@ -1,0 +1,113 @@
+admin: ""
+bfl:
+  username: ""
+workloads:
+  llminit:
+    replicaCount: 1
+  qwen38beellamadflash2q3:
+    replicaCount: 1
+userspace:
+  appData: ""
+  appCache: ""
+  userData: ""
+olaresEnv: {}
+model:
+  # The qwen38beellamadflash2 chart at UD-Q3_K_XL instead of UD-Q4_K_XL,
+  # nothing else changed, so the two compare on the quant alone. 4.45 GiB
+  # less to hold, which is VRAM left for ComfyUI on the shared card, and
+  # less to read per decode step. The retired qwen38beellamavision app served
+  # this file, so it may already be in the shared HF cache.
+  target:
+    repo: unsloth/Qwen3.8-27B-GGUF
+    file: Qwen3.8-27B-UD-Q3_K_XL.gguf
+    # Quant suffix of `file`, appended to the repo id to form MODEL_NAME (and
+    # therefore --alias).
+    quant: UD-Q3_K_XL
+  # Leave `repo` empty to serve text-only. BeeLlama documents multimodal DFlash
+  # routes as "unqualified" (docs/beellama-features.md, v0.4.6): not refused,
+  # just untested upstream. Kept on so the numbers compare with HyperQwen's,
+  # which were measured with vision on.
+  mmproj:
+    repo: unsloth/Qwen3.8-27B-GGUF
+    file: mmproj-F16.gguf
+  # Speculative-decoding draft model, passed as --spec-draft-model.
+  #
+  # DFlash2 is a block drafter: one non-autoregressive pass drafts a whole
+  # block, a selector picks a path through it. BeeLlama runs it through
+  # upstream's `draft-dflash` spec type and needs the upstream `dflash` GGUF
+  # schema, which is what z-lab publishes (llama.cpp PR #27342 format). z-lab
+  # reports ~5.4 accepted tokens per verify step for Q4_K_M, against ~3 for
+  # the MTP head.
+  #
+  # Q4_K_M (1.06 GiB): z-lab measured it accepting *more* than Q8_0 and BF16,
+  # and it is 0.5 GiB smaller than the MTP Q4_0 head it replaces.
+  #
+  # nMax 7: z-lab's published recipe, one less than the trained block of 8.
+  # DFlash2 ignores BeeLlama's adaptive depth controller (DFlash1 only).
+  #
+  # To A/B against MTP on the same engine: repo ggml-org/Qwen3.8-27B-GGUF,
+  # file mtp-Qwen3.8-27B-Q4_0.gguf, specType draft-mtp, nMax 3. Empty `repo`
+  # disables speculative decoding.
+  draft:
+    repo: z-lab/Qwen3.8-27B-DFlash2-GGUF
+    file: Qwen3.8-27B-DFlash2-Q4_K_M.gguf
+    specType: draft-dflash
+    nMax: "7"
+  # No `alias` key: the engine's --alias is pinned to MODEL_NAME in the
+  # ConfigMap (see templates/deployment.yaml) because llm-init's readiness gate
+  # matches on it. A free-form alias here would silently disable the API.
+  #
+  # 64K: HyperQwen's `fast` profile holds 64K too, so the two compare at the
+  # same ceiling. VRAM, in GiB against the 23552 MiB (= 23.00 GiB) HAMi
+  # reservation:
+  #
+  #     target   UD-Q3_K_XL   12.24
+  #     mmproj   F16           0.87
+  #     DFlash2  Q4_K_M        1.06
+  #     ------------------------- weights 14.17
+  #
+  # 4.45 GiB under the Q4 sibling, which held ~19.7 GB on the card. 64K is
+  # kept equal to it on purpose; lowering ctxSize is the next lever for
+  # ComfyUI headroom once this is measured. A DFlash2 draft cache
+  # does not grow with context the way the MTP head's does, per hanxiao's L4
+  # write-up (github.com/hanxiao/Qwen3.8-27B-UD-Q4_K_XL-L4); not measured here.
+  # Raise ctxSize against a *measured* nvidia-smi figure only.
+  ctxSize: "65536"
+  threads: "16"
+  # KV cache compression. BeeLlama v0.4.0 REMOVED the TurboQuant/TCQ formats the
+  # qwen3.6 chart used: `turbo3` now only warns and redirects by width. kvarn3
+  # is the 3-bit successor and the name to use directly.
+  cacheType: kvarn3
+  # HOST RAM budget for llama.cpp's server-side prompt cache, in MiB
+  # (--cache-ram, llama.cpp PR #16391) — the store behind "selected slot by
+  # restorable prefix" in the log. Nothing to do with VRAM or with the KV cache
+  # above.
+  #
+  # Set explicitly because the upstream default is 8192, and the engine does
+  # grow into all of it. On 2026-09-02 that was the difference between fitting
+  # the container limit and not: three OOMKills, each at 7.7-8.7 GB anon-rss,
+  # on top of ~19 GiB of page cache from reading the weights.
+  #
+  # 2048 keeps the win (a restored prefix is a skipped prompt eval, worth
+  # seconds on the 5-16K prompts opencode sends) at a quarter of the footprint.
+  # Raising it is safe only against a *measured* memory.current, not against the
+  # limit on paper. 0 disables the cache entirely.
+  cacheRamMiB: "2048"
+  # Unload model + KV cache from VRAM after this many idle seconds (llama.cpp
+  # --sleep-idle-seconds). <=0 disables (the flag is then omitted entirely, see
+  # the wrapper in templates/deployment.yaml).
+  #
+  # Inherited as DISABLED from the qwen3.6 app, where enabling it cost 4
+  # container restarts/day: freeing ~19 GiB on sleep drives HAMi-core's
+  # per-container usage counter negative, and the next wake's cuMemGetInfo hits
+  # its `limit < usage` guard -> CUDA_ERROR_INVALID_VALUE -> ggml_abort. Nothing
+  # about that is model-specific, so do not turn it on here either. See
+  # docs/olares-qwen36beellama.md for the full analysis.
+  sleepIdleSeconds: "-1"
+  # Qwen3.8 thinking-mode sampling, per the Qwen3.8-27B model card
+  # (temperature 1.0, top_p 0.95, top_k 20, min_p 0.0).
+  sampling:
+    temp: "1.0"
+    topP: "0.95"
+    topK: "20"
+    minP: "0.0"
