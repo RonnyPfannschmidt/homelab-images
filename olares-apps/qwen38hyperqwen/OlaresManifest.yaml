@@ -11,9 +11,9 @@ metadata:
   # beellama siblings do: no HyperQwen asset exists there and this chart
   # publishes no icons.
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
-  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, serving profile switchable from Settings"
+  description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, image input, serving profile switchable from Settings"
   title: Qwen38 27B HyperQwen
-  version: 1.2.0
+  version: 1.3.1
   # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
   # app as model-serving when its name starts with an engine prefix
   # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
@@ -23,14 +23,16 @@ metadata:
   categories:
     - AI Agents
     - LLM Chat
+    - Vision
   bento:
     family: qwen
     size_label: "27B"
     badge: turbo
     hero:
-      # Deliberately not a t/s figure. Upstream measures 127 tok/s single-user
-      # on an RTX 3090 at CTX=fast; nothing has been measured on this box, and
-      # the beellama charts' rule is that an unmeasured number never ships.
+      # Deliberately not a t/s figure, although one is measured now (137 tok/s
+      # single-stream at 1K on `fast`, 2026-09-23): the number depends on
+      # context length and on how warm the laptop runs, and a hero tile has
+      # no room for either caveat. The table in fullDescription does.
       value: "DFlash2"
       label: "speculative decode"
     specs:
@@ -38,10 +40,10 @@ metadata:
       - { label: "vram", value: "23 GB" }
     capabilities:
       tool_calling: true
-      vision:       false
+      vision:       true
       audio:        false
       mtp:          { enabled: true }
-    stack: "vLLM 0.28 patched · W4A16 AutoRound · DFlash2"
+    stack: "vLLM 0.29 patched · W4A16 AutoRound · DFlash2"
 # The engine's own OpenAI-compatible port. `authLevel: internal` means it
 # answers callers inside the cluster (Open WebUI among them) without a session
 # and 302s everything else to Authelia, so this is an API surface for in-cluster
@@ -57,8 +59,32 @@ entrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.2.0
+  versionName: 1.3.1
   upgradeDescription: |
+    v1.3.1: the `long` cap actually ships, and `GPU_UTIL` drops to 0.90.
+
+    A re-uploaded chart with an unchanged version is not re-read by Olares: the reinstall of the amended 1.3.0 served the first 1.3.0 tarball, without `maxSeqs`. This version carries the same content as the amended 1.3.0 under a version Olares will pick up.
+
+    `profile.gpuUtil` goes from 0.93 to **0.90**. The MTP profiles (`long`, `huge`) size their KV pool from it, and 0.93 left about 1.6 GiB above the budget for the engine's own non-PyTorch memory (~0.8 GiB), unprofiled transients, and ComfyUI, which shares this GPU under TimeSlice (0.31 GiB idle). 0.90 hands about 0.7 GiB of that back as headroom. By the per-token arithmetic it costs `long` about 22K tokens of pool and still holds its 150K window; `fast` pins `KV_MEM` and is unaffected apart from vLLM's startup check.
+
+    v1.3.0: image input, and the engine pinned to one upstream commit.
+
+    **The image is now `ghcr.io/syv-ai/hyperqwen:sha-73fd65d`, not `latest`.** That is syv-ai/HyperQwen@73fd65d (2026-09-23), the newest build at the time of writing, with manifest digest `sha256:0c14002d…0f4fcc`. From here on an upstream push changes nothing on this box until the tag in `templates/deployment.yaml` is edited. The same build moves the engine from vLLM 0.28.0 to **0.29.0** (syv-ai/HyperQwen#148). The single-user profiles pin `KV_MEM` and upstream reports them unaffected by the version change. Batch mode's `GPU_UTIL=0.972` OOMs on 0.29, but this chart never used that value. The first start after the upgrade pulls ~9.5 GB and recompiles into `/cache` (~15 minutes cold).
+
+    **Vision is on** (`profile.vision: "1"`). The engine keeps the checkpoint's vision tower instead of starting with `--language-model-only`. The tower is already part of the prepared weights (0.858 GiB BF16), so nothing is downloaded or requantized.
+
+    **The tower is offloaded to host RAM** (`profile.visionOffload: "1"`). Its weights sit in pinned host memory and each module is copied to the GPU only for its own forward. Upstream measured that `SPEC=dflash2` + vision does not boot on 24 GB without this: graph capture OOMs on a 960 MiB verify buffer with 787 MiB free. With it on, the full KV pool comes back, at 296 -> 333 ms of encode per large image and bit-exact output.
+
+    **One image per request.** That is upstream's shipped limit, and "per request" covers the whole resent conversation, so a second image in the same chat is refused with a 400. It can be raised through `EXTRA_ARGS` (`--limit-mm-per-prompt '{"image":{"count":N}}'`) at the cost of encoder budget and KV pool, but it has not been measured here.
+
+    **Vision with prefix caching has a known upstream defect on the `huge` path** (syv-ai/HyperQwen#50): a multi-turn chat with a new image every turn answered from the *previous* image once cache hits started landing inside an image's token span. The defect was bisected to the KVarN KV format, and this chart's `huge` profile already runs with prefix caching off. `fast` (bf16 KV) was clean in the reporter's 12-turn run. `long` (fp8 KV) was not tested by anyone.
+
+    llm-init advertises `supports_vision` when vision is on, as the beellama vision siblings do.
+
+    **`long` is capped at 2 concurrent requests** (`servingProfiles.long.maxSeqs`). It inherited the launcher's default of 8 and ran out of GPU memory at just 2 concurrent 1K requests: a 64 MiB activation with 622 MiB free and the KV cache 11% full, with vision on and off alike. That is upstream's gotcha 35 - allocations that scale with `max_num_seqs` eat the non-KV headroom, and the engine dies on its first real batch rather than at boot. At `MAX_SEQS=2` the same load survived every ladder up to 64K. The MTP profiles size their KV pool from `GPU_UTIL`, not a pinned `KV_MEM`, and ComfyUI shares this card under TimeSlice, which is why the margin is thinner here than on upstream's headless 3090. `huge` keeps the default and was measured only up to 2 streams.
+
+    **Benchmarked on this box**, every profile across context length and concurrency; the table is in the description. Also found while measuring: on Olares 1.12.6, `olares-cli settings apps env set` cannot change `SERVING_PROFILE` for this app, because it writes back the non-editable `HUGGINGFACE_TOKEN` and the whole request is refused with a 400.
+
     v1.2.0: the serving profile moves into Olares Settings, and the three axes that made it up become one choice.
 
     Until now `CTX`, `SPEC` and `PREFIX_CACHE` were three independent chart values, so switching context length meant editing the chart, re-packaging and `helm upgrade` - and it meant being free to pick a combination upstream warns about. Two of those combinations are real: past 64K dflash2 loses to mtp roughly 2:1 on everything but verbatim reproduction, and `ctx=huge` + `spec=mtp` + `PREFIX_CACHE=1` returns corrupt `prompt_logprobs` with nothing but a launcher warning.
@@ -139,28 +165,71 @@ spec:
 
     Known limitation: the image is pinned to `latest` because the project publishes no semver tags — only `latest` and per-commit `sha-<7>`. Repin to a sha- tag once a boot here is confirmed healthy.
   fullDescription: |
-    Qwen3.8 27B on Olares One via HyperQwen: a patched vLLM 0.28.0 (torch 2.13 /
+    Qwen3.8 27B on Olares One via HyperQwen: a patched vLLM 0.29.0 (torch 2.13 /
     cu130 / Triton 3.7.1) built to serve a 27B model fast on a single 24 GB card.
     RTX 5090M (24 GB GDDR7, sm_120 Blackwell) + 96 GB DDR5 + Core Ultra 9 275HX.
 
     Stack:
-      - Image: ghcr.io/syv-ai/hyperqwen:latest (upstream, CUDA 13, nvcc for FlashInfer JIT)
+      - Image: ghcr.io/syv-ai/hyperqwen:sha-73fd65d (upstream, pinned to one commit;
+        CUDA 13, nvcc for FlashInfer JIT)
       - Weights: dbirks/Qwen3.8-27B-W4A16-AutoRound, requantized in place on first
         boot (int8 lm_head, int8 embeddings, int8 MTP module, 40k draft vocabulary)
       - Speculative decoding: DFlash2 block drafter — 7 drafts in one
         non-autoregressive pass plus a path selector
       - KV cache: bf16 via FlashAttention at CTX=fast; fp8 (long) and KVarN
         4/2-bit (huge) are one env var away
-      - Context: 64K as shipped; 150K and 240K available without re-downloading
+      - Context: 64K as shipped; 150K and 200K available without re-downloading
+      - Vision: one image per request, up to 2048 image tokens; the vision
+        tower lives in host RAM and visits the GPU only to encode an image
 
     The serving profile is a dropdown in Olares Settings - fast (64K), long
-    (150K) or huge (240K), each pinning its own KV format and drafter - and a
-    switch costs a pod restart, not a re-download. `EXTRA_ARGS` beside it
-    appends raw vLLM arguments for anything the profiles do not cover.
+    (150K, at most 2 requests at a time) or huge (200K), each with its own KV
+    format and drafter - and a switch costs a pod restart, not a re-download.
+    `EXTRA_ARGS` beside it appends raw vLLM arguments for anything the profiles
+    do not cover.
 
-    Upstream measurements on an RTX 3090: 127 tok/s single-user, 381 tok/s when
-    the answer quotes the prompt, ~1,035 tok/s at 64 concurrent. Nothing measured
-    on this box yet.
+    Measured on this box (2026-09-23, chart v1.3.0, vision on, single mode):
+    upstream's bench/conc_ladder.py run inside the pod, distinct prompts per
+    stream so nothing comes from the prefix cache, 256 output tokens, thinking
+    off, 2 repetitions. tok/s per stream / all streams combined, then time to
+    first token. * = the streams never all decoded at once (they queued), so
+    the combined figure is a tail, not a steady state.
+
+      fast (bf16 KV, DFlash2)
+        1K     1 stream  137 / 137   0.6 s     4 streams   85 / 380   2.4 s
+               2 streams 126 / 252   1.3 s     8 streams   63 / 243*  4.8 s
+        16K    1 stream  128 / 128  12.6 s     2 streams   64 / 210  21 s
+        32K    1 stream  100 / 100  30 s
+        60K    1 stream   92 /  92  62 s
+      long (fp8 KV, MTP)
+        1K     1 stream  116 / 116   0.6 s     2 streams  109 / 231   1.2 s
+        16K    1 stream  114 / 114  11.6 s     2 streams   64 / 213  20 s
+        64K    1 stream   96 /  96  71 s       2 streams   44 / 181 109 s
+        125K   1 stream   88 /  88 170 s
+      huge (KVarN 4/2-bit KV, MTP)
+        1K     1 stream  103 / 104   0.7 s     2 streams   97 / 191   1.4 s
+        16K    1 stream   91 /  91  12.6 s
+        64K    1 stream   56 /  56  69 s
+        190K   1 stream   32 /  32 287 s
+
+    What the numbers say:
+      - Reading the prompt, not writing the answer, is the cost of context:
+        about 1,000-1,400 prompt tokens/s up to 64K, falling to ~660 at 190K.
+        A 16K prompt waits ~12 s for its first token on every profile.
+      - fast writes fastest at every length it can hold. long is the better
+        choice past 64K (88 tok/s at 125K); huge only for prompts beyond 150K,
+        and at a real cost (32 tok/s at 190K).
+      - A second stream roughly doubles combined throughput on short prompts.
+        From 16K up, one stream's answer is finished before the other's
+        prompt is read, so streams mostly take turns.
+      - Images: one 1280x800 screenshot adds ~0.4-0.9 s to the first token,
+        1920x1080 ~0.7-1.7 s. Read correctly on all three profiles.
+
+    Read these against the hardware: the RTX 5090 Laptop GPU drew ~100-120 W
+    of its 175 W and ran at ~1,650 MHz under a software thermal slowdown
+    (86-87 C). Decode is bandwidth-bound and on par with upstream's 250 W
+    RTX 3090 (127 tok/s single-stream there, 137 here); prompt reading is
+    compute-bound and would gain most from cooler running.
 
     Apache 2.0. Thinking mode with reasoning_effort, and tool calling through
     vLLM's qwen3_coder parser. First launch downloads and prepares ~21.5 GB.
@@ -252,7 +321,7 @@ envs:
     options:
       - title: "Fast — 64K context, bf16 KV, DFlash2 drafting (default)"
         value: fast
-      - title: "Long — 150K context, fp8 KV, MTP drafting"
+      - title: "Long — 150K context, fp8 KV, MTP drafting, 2 requests at a time"
         value: long
       - title: "Huge — 240K context, KVarN 4/2-bit KV, MTP drafting, no prefix cache"
         value: huge

@@ -15,6 +15,7 @@
 {{- if not $serving }}
   {{- fail (printf "profile %q is not one of: %s" $wanted (keys .Values.servingProfiles | sortAlpha | join ", ")) }}
 {{- end }}
+{{- $vision := eq (toString .Values.profile.vision) "1" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -41,6 +42,9 @@ data:
   {{- with .Values.profile.maxLen }}
   MAX_LEN: {{ . | quote }}
   {{- end }}
+  {{- with $serving.maxSeqs }}
+  MAX_SEQS: {{ . | quote }}
+  {{- end }}
   {{- with .Values.profile.draftTokens }}
   DRAFT_TOKENS: {{ . | quote }}
   {{- end }}
@@ -53,6 +57,8 @@ data:
   {{- with .Values.olaresEnv.EXTRA_ARGS | default .Values.profile.extraArgs }}
   EXTRA_ARGS: {{ . | quote }}
   {{- end }}
+  VISION: {{ ternary "1" "0" $vision | quote }}
+  VISION_OFFLOAD: "{{ .Values.profile.visionOffload }}"
   VERIFY: "{{ .Values.profile.verify }}"
   PREPARE: "{{ .Values.profile.prepare }}"
   PORT: "18020"
@@ -128,8 +134,11 @@ spec:
           env:
             - name: ENGINE_KIND
               value: vllm
+            # supports_vision follows the engine's VISION rather than being
+            # written out: with VISION=0 the engine refuses every image with a 400
+            # ("At most 0 image(s)"), and advertising it would invite them.
             - name: MODEL_SUPPORTS
-              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice"
+              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice{{ if $vision }},supports_vision{{ end }}"
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN
@@ -217,7 +226,7 @@ data:
   MODEL_SOURCE: "hf://{{ .Values.model.repo }} --include config.json"
   PORT: "8090"
 ---
-# HyperQwen: patched vLLM 0.28.0 (torch 2.13 / cu130) plus a model-preparation
+# HyperQwen: patched vLLM 0.29.0 (torch 2.13 / cu130) plus a model-preparation
 # pipeline, both baked into one upstream image. Unlike the beellama siblings
 # there is no llm-init here, and that is forced rather than chosen: llm-init
 # populates the platform-shared HuggingFace *hub cache* from a MODEL_SOURCE
@@ -264,14 +273,22 @@ spec:
       enableServiceLinks: false
       containers:
         - name: hyperqwen
-          # Built on every push to main by the project's own workflow; the
-          # per-commit tags are ghcr.io/syv-ai/hyperqwen:sha-<7>. `latest` is
-          # pinned here against a moving target on purpose *for now* — the
-          # project ships no semver tags at all, so there is nothing else to
-          # pin to. Replace with a sha- tag once a boot on this box is
-          # confirmed healthy, so a later upstream push cannot change what
-          # this app serves.
-          image: "ghcr.io/syv-ai/hyperqwen:latest"
+          # Pinned to one upstream commit, so an upstream push cannot change
+          # what this app serves: upgrading is editing this line. The project
+          # publishes no semver tags, only `latest` and one immutable
+          # `sha-<7>` per commit on main, which is what this is.
+          #
+          # sha-73fd65d = syv-ai/HyperQwen@73fd65d549f11a7c692492f38a398baf3592696c
+          # (2026-09-23, vLLM 0.29.0), manifest digest
+          # sha256:0c14002d5776b6d8e1cc098dc66644196c6731526af3cc49d84a33558a0f4fcc.
+          # The digest is recorded rather than appended as `@sha256:`: no
+          # Market chart pins an image that way, and Olares pre-pulls images
+          # itself, so the tag is the form known to survive that path.
+          #
+          # A tag also flips the default pull policy from Always (what
+          # `latest` got) to IfNotPresent, so a restart no longer re-checks
+          # the 9.5 GB image.
+          image: "ghcr.io/syv-ai/hyperqwen:sha-73fd65d"
           # The image ENTRYPOINT is `bash docker/entrypoint.sh`; the argument
           # selects what runs. `single`/`batch` both run the idempotent
           # prepare first (a state check measured in seconds once the model is

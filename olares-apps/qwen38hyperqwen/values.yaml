@@ -60,7 +60,14 @@ profile:
   # profile, and upstream's rule of thumb is to keep ~2 GB of VRAM free.
   # Past ~0.975 the engine OOMs at run time, with an error that never
   # mentions the cache.
-  gpuUtil: "0.93"
+  #
+  # 0.90 rather than upstream's 0.93 because this card is shared: ComfyUI sits
+  # on it under Olares TimeSlice, and at 0.93 `long` had ~1.6 GiB above its
+  # budget for the engine's non-PyTorch memory (~0.8 GiB), unprofiled
+  # transients and the other tenant together. Only the MTP profiles (`long`,
+  # `huge`) size their pool from this; each 0.01 is ~0.23 GiB of KV. It is
+  # read once at boot, so it cannot follow ComfyUI loading a model later.
+  gpuUtil: "0.90"
   # Empty = the per-profile default (65536 fast / 150000 long / 200000 huge).
   # Set only to pull the ceiling *down*; raising it above what the KV pool
   # holds fails at run time, not at boot.
@@ -75,8 +82,10 @@ profile:
   # profile's context default, so the two are not interchangeable.
   dflashTokens: ""
   # KV pool size in BYTES, passed as vLLM's --kv-cache-memory. Empty = the
-  # launcher's own per-profile pin (5583457484 = 5.2 GiB on fast/long,
-  # 5261334938 = 4.9 GiB on huge).
+  # launcher's own pin, which exists only on the DFlash2 path: 5583457484
+  # (5.2 GiB) on `fast`. The MTP profiles (`long`, `huge`) ignore this and
+  # size the pool from GPU_UTIL - read off their boot logs on 2026-09-23,
+  # which carry no kv_cache_memory_bytes at all.
   #
   # Exposed rather than left implicit because it is the single most important
   # VRAM number in this app, and because it is *pinned bytes, not a fraction*
@@ -95,6 +104,27 @@ profile:
   # Free-form extra vLLM arguments, appended last. Empty by default; the
   # launcher warns when one of them shadows a control set above.
   extraArgs: ""
+  # Image input. "1" keeps the checkpoint's vision tower instead of starting
+  # the engine with `--language-model-only`. The tower is already in the
+  # prepared weights (0.858 GiB BF16, base and -fast alike), so this costs a
+  # restart, not a download. The launcher then adds a 2048-image-token pixel
+  # cap and ONE image per request; both can be overridden from EXTRA_ARGS.
+  #
+  # "Per request" counts the whole conversation, which Open WebUI and opencode
+  # resend every turn: a second image in the same chat is refused with a 400,
+  # not just a second image in one message.
+  vision: "1"
+  # With vision on, keep the tower's weights in pinned host RAM and copy each
+  # module to the GPU only for its own forward (upstream's
+  # vision-tower-cpu-offload patch). Not optional on this card with the `fast`
+  # profile: upstream measured SPEC=dflash2 + VISION=1 failing to boot on
+  # 24 GB without it, OOMing in graph capture on a 960 MiB verify buffer with
+  # 787 MiB free, because the tower takes 0.85 GiB of a ~1.1 GiB margin. With
+  # it on, that config boots with the full KV pool. Cost: 296 -> 333 ms of
+  # encode per 8192-patch image, output bit-exact (upstream, RTX 3090, PCIe 4.0 x16).
+  # Another GPU app already holds part of that margin here: ComfyUI, 318 MiB
+  # idle on 2026-09-23.
+  visionOffload: "1"
   # The entrypoint's pre-flight (`verify.sh --no-server`): patches applied,
   # torch sees a GPU, flashinfer usable, the prepared model's tensors the
   # shape the config claims. Any FAIL aborts the container rather than
@@ -138,6 +168,17 @@ profile:
 # `specs/olares_agents.py` is the 64K of `fast`; moving to long or huge
 # without raising it leaves Hermes, opencode and Open WebUI budgeting against
 # a window a third of the real one.
+#
+# `maxSeqs` caps concurrent requests (MAX_SEQS) where the launcher's default
+# is more than this card holds; empty = the launcher's own default. `long`
+# defaults to 8 and died at 2 concurrent 1K requests (2026-09-23): a 64 MiB
+# activation with 622 MiB free, KV cache 11% full, vision on or off alike. At
+# MAX_SEQS=2 the same load survived, soak included. Upstream documents this
+# (gotchas.md 35): per-seat allocations scale with max_num_seqs itself, and
+# the engine dies on its first real batch when non-KV headroom runs out. The
+# MTP profiles (long, huge) size their KV pool from GPU_UTIL rather than a
+# pinned KV_MEM, and ComfyUI shares this card under TimeSlice, so that
+# headroom is thinner here than on upstream's headless 3090.
 servingProfiles:
   fast:
     ctx: fast
@@ -147,6 +188,7 @@ servingProfiles:
     ctx: long
     spec: mtp
     prefixCache: "1"
+    maxSeqs: "2"
   huge:
     ctx: huge
     spec: mtp
