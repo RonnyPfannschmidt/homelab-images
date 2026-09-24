@@ -99,10 +99,15 @@ autostart=true
 autorestart=true
 startsecs=5
 stopsignal=INT
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
+stdout_logfile=%(ENV_HOME)s/logs/olares-market.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=5
 redirect_stderr=true
 ```
+
+The log is a file supervisor rotates itself. Not `/dev/stdout`: that is
+supervisord's own stdout, which a daemonised supervisord does not keep, so
+`supervisorctl tail` shows nothing and there is no telling whether a sync ran.
 
 ```bash
 supervisorctl reread && supervisorctl update
