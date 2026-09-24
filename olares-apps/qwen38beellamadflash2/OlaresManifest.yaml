@@ -1,0 +1,133 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  llminit: 1
+  qwen38beellamadflash2: 1
+metadata:
+  name: qwen38beellamadflash2
+  # Reuses the qwen3.6 app's icon asset on aamsellem's external host — no
+  # Qwen3.8 asset exists there, and this chart does not publish icons.
+  icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+  description: "Qwen3.8 27B at UD-Q4_K_XL on BeeLlama.cpp preview-v0.4.7 — DFlash2 block drafting + mmproj F16 + kvarn3 KV @ 64K"
+  title: Qwen38 27B BeeLlama DFlash2
+  version: 1.0.1
+  # AI Agents is what makes openwebui-sync pick the app up as a model provider.
+  categories:
+    - Vision
+    - AI Agents
+# The only entrance: llm-init's download-progress dashboard, opened from the
+# Olares desktop with a browser session. `authLevel: internal` means it 302s to
+# Authelia for any request without a session, so it is NOT an API surface —
+# other apps reach the model over in-cluster Service DNS instead
+# (http://llminit.qwen38beellamadflash2-shared:8090/v1), which is what
+# options.shared below enables. Confirmed on the Q3 sibling: pointing Open WebUI
+# at the entrance URL gets a 302 to the Authelia login page, never JSON.
+entrances:
+  - name: qwen38beellamadflash2
+    port: 8090
+    host: llminit
+    title: Qwen38 27B BeeLlama Q4_K_XL
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    openMethod: window
+    authLevel: internal
+spec:
+  # Required by lint whenever options.shared is true: a shared app serves every
+  # user on the cluster, so only an admin may install it.
+  onlyAdmin: true
+  versionName: 1.0.1
+  upgradeDescription: |
+    v1.0.1: BeeLlama preview-v0.4.7. On v0.4.6 the DFlash2 draft context
+    inherited the target's 2048-token ubatch and its compute buffer (4.1 GiB)
+    did not fit; the preview sizes the draft ubatch on its own (default 128).
+
+    v1.0.0: the retired qwen38beellamaq4kxl chart with its MTP head swapped for
+    z-lab's Qwen3.8 DFlash2 drafter, on a newer BeeLlama than v0.4.3.
+
+    Same target GGUF (UD-Q4_K_XL, already in the shared cache), same vision
+    projector, same kvarn3 KV at 64K, same HAMi and host-memory settings. The
+    drafter and the engine release differ; pointing `model.draft` back at the
+    MTP head (see values.yaml) separates the two on the same engine.
+  fullDescription: |
+    Qwen3.8 27B vision-capable via BeeLlama.cpp on Olares One at UD-Q4_K_XL,
+    with DFlash2 block-diffusion speculative decoding. RTX 5090M (24 GB GDDR7,
+    sm_120 Blackwell consumer mobile) + 96 GB DDR5 + Core Ultra 9 275HX.
+
+    Stack:
+      - Image: ghcr.io/anbeeld/beellama.cpp:server-cuda13-preview-v0.4.7-1156b183630e
+      - Target: unsloth/Qwen3.8-27B-GGUF UD-Q4_K_XL (17.92 GB)
+      - Vision projector: unsloth mmproj-F16.gguf (0.93 GB)
+      - Drafter: z-lab/Qwen3.8-27B-DFlash2-GGUF Q4_K_M (1.14 GB)
+      - KV cache: kvarn3
+      - Spec: --spec-type draft-dflash --spec-draft-n-max 7
+      - Context: 64K
+
+    An alternative to qwen38hyperqwen, not a companion: each reserves the whole
+    GPU budget, so run one at a time.
+
+    Not benchmarked yet. BeeLlama documents DFlash with a vision projector
+    loaded as an unqualified route; set mmproj.repo empty to serve text-only
+    if it misbehaves.
+
+    Consumers must connect over in-cluster Service DNS
+    (http://llminit.qwen38beellamadflash2-shared:8090/v1), not the entrance
+    URL: the entrance is authLevel internal and 302s any session-less request
+    to Authelia.
+
+  developer: ronnypfannschmidt
+  website: https://github.com/Anbeeld/beellama.cpp
+  sourceCode: https://github.com/Anbeeld/beellama.cpp
+  submitter: ronnypfannschmidt
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/ggml-org/llama.cpp/blob/master/LICENSE
+
+  accelerator:
+    - mode: nvidia
+      requiredCpu: "4"
+      limitedCpu: "16"
+      requiredMemory: 22Gi
+      # SUM ACROSS CONTAINERS, not the engine's own limit — the market's chart
+      # validator rejects the package outright with "sum of container
+      # resources.limits.memory (NNGi) must be <= limitedMemory". Here that is
+      # llm-init's 2Gi plus the engine's 40Gi, so this has to be at least 42Gi.
+      # 44Gi leaves room to nudge the engine limit without another rejection.
+      limitedMemory: 44Gi
+      requiredDisk: 25Gi
+      limitedDisk: 40Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+
+  supportArch:
+    - amd64
+permission:
+  appData: true
+  # The chart reads and writes the shared HuggingFace cache under
+  # /olares/rootfs/Common/huggingface.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `qwen38beellamadflash2-shared` instead of the per-user namespace
+  # and force-enables cross-namespace access (mesh sidecar + NetworkPolicy), so
+  # other apps can reach the engine at
+  # http://llminit.qwen38beellamadflash2-shared:8090/v1. Also makes the install
+  # admin-only, hence spec.onlyAdmin above.
+  shared: true
+  # Marks the app as an LLM provider for gateway-aware consumers. No gateway is
+  # installed on this box today, so this is currently inert — kept because every
+  # v3 LLM app in beclab/apps sets it.
+  LLMGatewaySupported: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN
