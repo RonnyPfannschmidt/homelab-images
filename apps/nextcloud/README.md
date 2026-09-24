@@ -1,6 +1,6 @@
 # nextcloud
 
-Nextcloud 34.0.4 with the 9 apps the homeserver serves, baked in and pinned.
+Nextcloud 35.0.0 with the 9 apps the homeserver serves, baked in and pinned.
 
 `ghcr.io/ronnypfannschmidt/nextcloud:sha-<commit>` — amd64 and arm64 in one
 manifest list. Pin a deployment to a `sha-` tag; `latest` moves.
@@ -16,7 +16,7 @@ Nothing here resolves at build time:
 - the **base image by digest**, not by tag, in the
   [Containerfile](Containerfile) — the tag will move under it;
 - every **app by version and sha256**, in [apps.lock](apps.lock), at a
-  release the Nextcloud 34 feed offers, minus the fifteen two review passes
+  release the Nextcloud 35 feed offers, minus the fifteen two review passes
   dropped — `apps.lock`'s own header says which and why.
 
 An app moves when someone moves it:
@@ -105,6 +105,14 @@ names the previous major and the current one, nothing further back, so an
 instance two majors behind cannot be upgraded by a single image — it has to run
 the intermediate one. The homeserver went 32 → 33 → 34 that way on 2026-09-19,
 two images and two migrations, because 34 refuses a 32 database outright.
+
+**An app with no release for the new platform is a blocker, not a bump.**
+`--verify` calls that `gone`, and it means the app declares a `max-version`
+below the new server and there is nothing to move to. The build would still go
+green — the tarball URL and its hash have not changed — and the app would be
+disabled on the instance afterwards. Hold the platform until it has a release,
+or drop the app deliberately. `dav_push` had no Nextcloud 35 release on the
+morning of 2026-09-19 and had one by that evening.
 
 ## What it does not carry
 
