@@ -7,7 +7,7 @@ FROM scratch AS lockfiles
 COPY bootc/fedora-basesetup/rpms.lock.yaml /rpms.lock.yaml
 COPY bootc/fedora-basesetup/install_lock.py /install_lock.py
 
-FROM quay.io/fedora/fedora-silverblue:44@sha256:651256d94e912799b3c1ad5bd80bd2cb9901f8ed3e38e2c702d9d4419a60592f
+FROM quay.io/fedora/fedora-silverblue:44@sha256:ff6663a8baa33aaa768b1086f7cce5f602815be40ff55006d08d4a347349145d
 
 # rpm stamps a wall-clock INSTALLTIME and INSTALLTID into the rpmdb for every
 # package, and the rpmdb cannot be deleted - it is the one thing in this image
