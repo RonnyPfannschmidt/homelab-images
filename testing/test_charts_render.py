@@ -129,6 +129,71 @@ def test_chart_version_matches_nothing_stale(chart: Path) -> None:
     )
 
 
+def test_model_app_is_visible_to_the_router(chart: Path, ci_values: Path) -> None:
+    """A chart running llm-init is a model app, and the Router app only sees shared entrances.
+
+    Transitional with the manifests. Router (Olares' LLM gateway) resolves a
+    model app's address from `sharedEntrances` alone; without one it stores
+    `model-application-address-unknown.invalid` and never lists the model,
+    with no error anywhere but its own log. All three Qwen3.8 charts shipped
+    that way. The host has to be a Service this chart renders.
+    """
+    objects = render(chart, ci_values)
+    runs_llm_init = any(
+        o.get("kind") == "Service"
+        and (o.get("spec", {}).get("selector") or {}).get("io.kompose.service") == "llm-init"
+        for o in objects
+    )
+    manifest = yaml.safe_load((chart / "OlaresManifest.yaml").read_text())
+    shared = manifest.get("sharedEntrances") or []
+    if not runs_llm_init and not shared:
+        pytest.skip(f"{chart.name} is not a model app")
+
+    assert shared, (
+        f"{chart.name} runs llm-init but declares no sharedEntrances; Router will not list it"
+    )
+    services = {o["metadata"]["name"] for o in objects if o.get("kind") == "Service"}
+    for entrance in shared:
+        assert entrance["host"] in services, (
+            f"{chart.name}: shared entrance {entrance['name']!r} points at Service "
+            f"{entrance['host']!r}, which the chart does not render ({sorted(services)})"
+        )
+
+
+#: What the Router app reads out of a model app's manifest to build its model
+#: entry: the envs the market llama.cpp and vLLM apps declare.
+MODEL_ENVS = ("MODEL_SOURCE", "MODEL_NAME", "MODEL_MODE", "MODEL_SUPPORTS")
+
+
+def test_model_app_declares_its_model_in_the_manifest(
+    chart: Path, ci_values: Path, tmp_path: Path
+) -> None:
+    """The manifest's MODEL_* defaults are exactly what the chart renders without them.
+
+    Router takes the model's name, mode and capabilities from these defaults,
+    while the pods are rendered from values.yaml whenever Olares passes
+    nothing. Two copies of one declaration, so the check is that feeding the
+    defaults in changes nothing: a drift would have Router advertise a model
+    llm-init never serves under that id.
+    """
+    manifest = yaml.safe_load((chart / "OlaresManifest.yaml").read_text())
+    declared = {e["envName"]: e for e in manifest.get("envs") or []}
+    if not manifest.get("sharedEntrances"):
+        pytest.skip(f"{chart.name} is not a model app")
+
+    missing = [name for name in MODEL_ENVS if name not in declared]
+    assert not missing, f"{chart.name}: manifest envs lack {missing}; Router will list no model"
+
+    with_defaults = tmp_path / "with-defaults.yaml"
+    values = yaml.safe_load(ci_values.read_text())
+    values["olaresEnv"] = {name: declared[name]["default"] for name in MODEL_ENVS}
+    with_defaults.write_text(yaml.safe_dump(values))
+    assert render(chart, with_defaults) == render(chart, ci_values), (
+        f"{chart.name}: the manifest's MODEL_* defaults render differently from "
+        "the chart's own fallbacks"
+    )
+
+
 def test_subchart_replica_count_matches_the_workload_lever(chart: Path) -> None:
     """A chart that imports a subchart has to keep two replica counts in step.
 

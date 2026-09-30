@@ -1,4 +1,8 @@
 ---
+{{- $modelName := .Values.olaresEnv.MODEL_NAME | default (printf "%s:%s" .Values.model.target.repo .Values.model.target.quant) }}
+{{- $modelMode := .Values.olaresEnv.MODEL_MODE | default "chat" }}
+{{- $modelSupports := .Values.olaresEnv.MODEL_SUPPORTS | default "thinking,tools,vision" }}
+{{- $modelSource := .Values.olaresEnv.MODEL_SOURCE | default (printf "hf://%s --include %s%s%s" .Values.model.target.repo .Values.model.target.file (ternary (printf ",hf://%s --include %s" .Values.model.mmproj.repo .Values.model.mmproj.file) "" (not (empty .Values.model.mmproj.repo))) (ternary (printf ",hf://%s --include %s" .Values.model.draft.repo .Values.model.draft.file) "" (not (empty .Values.model.draft.repo)))) }}
 # Runtime config shared by the llm-init downloader and the wrapper script that
 # waits for it. Single source of truth is .Values.model.* (values.yaml).
 apiVersion: v1
@@ -22,7 +26,7 @@ data:
   # engine is healthy. The stock llama.cpp template gets this for free by running
   # `llama-server -hf "$MODEL_NAME"`; this chart loads local GGUF paths instead,
   # so the alias has to be pinned to the same string by hand.
-  MODEL_ALIAS: "{{ .Values.model.target.repo }}:{{ .Values.model.target.quant }}"
+  MODEL_ALIAS: "{{ $modelName }}"
   CTX_SIZE: "{{ .Values.model.ctxSize }}"
   THREADS: "{{ .Values.model.threads }}"
   CACHE_TYPE: "{{ .Values.model.cacheType }}"
@@ -258,13 +262,14 @@ spec:
             - name: ENGINE_KIND
               value: llamacpp
             - name: MODEL_NAME
-              value: "{{ .Values.model.target.repo }}:{{ .Values.model.target.quant }}"
+              value: "{{ $modelName }}"
             - name: MODEL_MODE
-              value: chat
+              value: "{{ $modelMode }}"
+            # vision is dropped when no projector is loaded.
             - name: MODEL_SUPPORTS
-              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice,supports_vision"
+              value: "{{ include "model.supports" (dict "supports" $modelSupports "vision" (not (empty .Values.model.mmproj.repo))) }}"
             - name: MODEL_SOURCE
-              value: "hf://{{ .Values.model.target.repo }} --include {{ .Values.model.target.file }}{{ if .Values.model.mmproj.repo }},hf://{{ .Values.model.mmproj.repo }} --include {{ .Values.model.mmproj.file }}{{ end }}{{ if .Values.model.draft.repo }},hf://{{ .Values.model.draft.repo }} --include {{ .Values.model.draft.file }}{{ end }}"
+              value: "{{ $modelSource }}"
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN
@@ -371,7 +376,7 @@ spec:
             - name: ENGINE_KIND
               value: llamacpp
             - name: MODEL_NAME
-              value: "{{ .Values.model.target.repo }}:{{ .Values.model.target.quant }}"
+              value: "{{ $modelName }}"
             - name: GPU_TYPE
               value: nvidia
             - name: HF_ENDPOINT
@@ -543,4 +548,23 @@ spec:
     - name: http
       port: 8081
       targetPort: 8081
+  type: ClusterIP
+---
+# The shared entrance the manifest declares, and what the Router app probes
+# (`/api/model-spec`, `/api/progress`, `/v1/models` - llm-init's API). Port 80
+# because the manifest carries port 0, which is what the market apps do.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8090
   type: ClusterIP
