@@ -13,7 +13,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, image input, serving profile switchable from Settings"
   title: Qwen38 27B HyperQwen
-  version: 1.3.1
+  version: 1.3.3
   # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
   # app as model-serving when its name starts with an engine prefix
   # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
@@ -24,26 +24,6 @@ metadata:
     - AI Agents
     - LLM Chat
     - Vision
-  bento:
-    family: qwen
-    size_label: "27B"
-    badge: turbo
-    hero:
-      # Deliberately not a t/s figure, although one is measured now (137 tok/s
-      # single-stream at 1K on `fast`, 2026-09-23): the number depends on
-      # context length and on how warm the laptop runs, and a hero tile has
-      # no room for either caveat. The table in fullDescription does.
-      value: "DFlash2"
-      label: "speculative decode"
-    specs:
-      - { label: "context", value: "64K" }
-      - { label: "vram", value: "23 GB" }
-    capabilities:
-      tool_calling: true
-      vision:       true
-      audio:        false
-      mtp:          { enabled: true }
-    stack: "vLLM 0.29 patched · W4A16 AutoRound · DFlash2"
 # The engine's own OpenAI-compatible port. `authLevel: internal` means it
 # answers callers inside the cluster (Open WebUI among them) without a session
 # and 302s everything else to Authelia, so this is an API surface for in-cluster
@@ -56,11 +36,26 @@ entrances:
     icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
     openMethod: window
     authLevel: internal
+# What the Router app (Olares' LLM gateway) looks for, and the only thing it
+# looks for: an app without a shared entrance is registered with the address
+# `model-application-address-unknown.invalid` and never listed. Copied from
+# the market llama.cpp/vLLM apps: host is a Service in this chart, port 0.
+sharedEntrances:
+  - name: qwen38hyperqwen
+    host: sharedentrances-api
+    port: 0
+    title: Qwen38 27B HyperQwen
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    authLevel: internal
+    invisible: true
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.3.1
+  versionName: 1.3.3
   upgradeDescription: |
+    v1.3.3: the model is declared the way the market apps declare it. `MODEL_SOURCE`, `MODEL_NAME`, `MODEL_MODE` and `MODEL_SUPPORTS` are manifest envs with defaults, and the Router app builds its model entry from them; before this it listed the app with no model of its own. `MODEL_SUPPORTS` uses the market's short form (`thinking,tools,vision`) and the chart expands it to llm-init's `supports_*` keys. Nothing the pods receive changes.
+    v1.3.2: listed in the Router app. Router registers a model app only through a shared entrance, and this chart declared none, so the gateway stored the placeholder address `model-application-address-unknown.invalid` and never showed the model. It now publishes `sharedentrances-api`, port 80 onto llm-init, as the market llama.cpp and vLLM apps do.
+    `metadata.bento` is gone: the market's manifest validator now rejects it (`metadata field "bento" is not part of the manifest schema`), which blocked uploading this version although 1.3.1 went through with it.
     v1.3.1: the `long` cap actually ships, and `GPU_UTIL` drops to 0.90.
 
     A re-uploaded chart with an unchanged version is not re-read by Olares: the reinstall of the amended 1.3.0 served the first 1.3.0 tarball, without `maxSeqs`. This version carries the same content as the amended 1.3.0 under a version Olares will pick up.
@@ -296,6 +291,48 @@ envs:
     applyOnChange: true
     valueFrom:
       envName: OLARES_USER_HUGGINGFACE_TOKEN
+  # The model declaration, in the shape the market llama.cpp/vLLM apps use.
+  # The Router app builds its model entry from these manifest defaults; without
+  # them it lists the app with no model of its own. Not editable: HyperQwen's
+  # launcher hard-codes the served name, and prepare owns the real download.
+  # The template falls back to the same values when Olares passes nothing, and
+  # testing/test_charts_render.py holds the two together.
+  - envName: MODEL_SOURCE
+    default: "hf://dbirks/Qwen3.8-27B-W4A16-AutoRound --include config.json"
+    type: string
+    required: true
+    description: >-
+      Only config.json: HyperQwen's prepare downloads and requantizes the weights itself, so llm-init must not fetch them a second time.
+    regex: "^hf://"
+  - envName: MODEL_NAME
+    default: "qwen3.8-27b"
+    type: string
+    required: true
+    description: >-
+      The served model id. Fixed by HyperQwen's launcher; llm-init waits for exactly this id on the engine's /v1/models.
+  - envName: MODEL_MODE
+    default: chat
+    type: string
+    required: true
+    options:
+      - title: Chat
+        value: chat
+  - envName: MODEL_SUPPORTS
+    default: "thinking,tools,vision"
+    type: string
+    required: true
+    description: The model capabilities.
+    options:
+      - title: Vision
+        value: vision
+      - title: Tools
+        value: tools
+      - title: Thinking
+        value: thinking
+      - title: None
+        value: none
+    multiSelect: true
+    splitter: ","
   # The serving profile as ONE choice rather than the three env vars it
   # expands to. `values.yaml` holds the expansion (`servingProfiles`); this is
   # only the name, and `options` is what keeps a combination upstream warns

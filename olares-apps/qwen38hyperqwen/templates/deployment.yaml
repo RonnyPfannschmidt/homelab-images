@@ -16,6 +16,10 @@
   {{- fail (printf "profile %q is not one of: %s" $wanted (keys .Values.servingProfiles | sortAlpha | join ", ")) }}
 {{- end }}
 {{- $vision := eq (toString .Values.profile.vision) "1" }}
+{{- $modelName := .Values.olaresEnv.MODEL_NAME | default .Values.model.servedName }}
+{{- $modelMode := .Values.olaresEnv.MODEL_MODE | default "chat" }}
+{{- $modelSource := .Values.olaresEnv.MODEL_SOURCE | default (printf "hf://%s --include config.json" .Values.model.repo) }}
+{{- $modelSupports := .Values.olaresEnv.MODEL_SUPPORTS | default "thinking,tools,vision" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -134,11 +138,11 @@ spec:
           env:
             - name: ENGINE_KIND
               value: vllm
-            # supports_vision follows the engine's VISION rather than being
-            # written out: with VISION=0 the engine refuses every image with a 400
-            # ("At most 0 image(s)"), and advertising it would invite them.
+            # vision is dropped when the engine's VISION is off: with VISION=0
+            # it refuses every image with a 400 ("At most 0 image(s)"), and
+            # advertising it would invite them.
             - name: MODEL_SUPPORTS
-              value: "supports_reasoning,supports_reasoning_effort,supports_function_calling,supports_parallel_function_calling,supports_tool_choice{{ if $vision }},supports_vision{{ end }}"
+              value: "{{ include "model.supports" (dict "supports" $modelSupports "vision" $vision) }}"
             - name: HF_ENDPOINT
               value: "https://huggingface.co/"
             - name: HF_TOKEN
@@ -214,8 +218,8 @@ data:
   # Must equal the engine's --served-model-name exactly: llm-init polls the
   # engine's /v1/models and only enables its OpenAI data plane once it finds
   # that string, answering 503 {"code":"not_ready"} forever otherwise.
-  MODEL_NAME: "{{ .Values.model.servedName }}"
-  MODEL_MODE: chat
+  MODEL_NAME: "{{ $modelName }}"
+  MODEL_MODE: "{{ $modelMode }}"
   # Required - llm-init refuses to start with `MODEL_SOURCE: required` - but
   # deliberately tiny. HyperQwen's own `prepare` owns the real ~21.5 GB and
   # llm-init cannot do the requantization that follows, so pointing this at
@@ -223,7 +227,7 @@ data:
   # cache for nothing. One `--include config.json` (15 KB) from the same repo
   # satisfies the requirement and keeps the dashboard honest about which model
   # this is.
-  MODEL_SOURCE: "hf://{{ .Values.model.repo }} --include config.json"
+  MODEL_SOURCE: "{{ $modelSource }}"
   PORT: "8090"
 ---
 # HyperQwen: patched vLLM 0.29.0 (torch 2.13 / cu130) plus a model-preparation
@@ -488,4 +492,23 @@ spec:
     - name: http
       port: 18020
       targetPort: 18020
+  type: ClusterIP
+---
+# The shared entrance the manifest declares, and what the Router app probes
+# (`/api/model-spec`, `/api/progress`, `/v1/models` - llm-init's API). Port 80
+# because the manifest carries port 0, which is what the market apps do.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8090
   type: ClusterIP

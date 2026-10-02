@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8 27B at UD-Q4_K_XL on BeeLlama.cpp preview-v0.4.7 — DFlash2 block drafting + mmproj F16 + kvarn3 KV @ 64K"
   title: Qwen38 27B BeeLlama DFlash2
-  version: 1.0.1
+  version: 1.0.3
   # AI Agents is what makes openwebui-sync pick the app up as a model provider.
   categories:
     - Vision
@@ -32,12 +32,26 @@ entrances:
     icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
     openMethod: window
     authLevel: internal
+# What the Router app (Olares' LLM gateway) looks for, and the only thing it
+# looks for: an app without a shared entrance is registered with the address
+# `model-application-address-unknown.invalid` and never listed. Copied from
+# the market llama.cpp/vLLM apps: host is a Service in this chart, port 0.
+sharedEntrances:
+  - name: qwen38beellamadflash2
+    host: sharedentrances-api
+    port: 0
+    title: Qwen38 27B BeeLlama DFlash2
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    authLevel: internal
+    invisible: true
 spec:
   # Required by lint whenever options.shared is true: a shared app serves every
   # user on the cluster, so only an admin may install it.
   onlyAdmin: true
-  versionName: 1.0.1
+  versionName: 1.0.3
   upgradeDescription: |
+    v1.0.3: the model is declared the way the market apps declare it. `MODEL_SOURCE`, `MODEL_NAME`, `MODEL_MODE` and `MODEL_SUPPORTS` are manifest envs with defaults, and the Router app builds its model entry from them; before this it listed the app with no model of its own. `MODEL_SUPPORTS` uses the market's short form (`thinking,tools,vision`) and the chart expands it to llm-init's `supports_*` keys. Nothing the pods receive changes.
+    v1.0.2: listed in the Router app. Router registers a model app only through a shared entrance, and this chart declared none, so the gateway stored the placeholder address `model-application-address-unknown.invalid` and never showed the model. It now publishes `sharedentrances-api`, port 80 onto llm-init, as the market llama.cpp and vLLM apps do.
     v1.0.1: BeeLlama preview-v0.4.7. On v0.4.6 the DFlash2 draft context
     inherited the target's 2048-token ubatch and its compute buffer (4.1 GiB)
     did not fit; the preview sizes the draft ubatch on its own (default 128).
@@ -131,3 +145,45 @@ envs:
     applyOnChange: true
     valueFrom:
       envName: OLARES_USER_HUGGINGFACE_TOKEN
+  # The model declaration, in the shape the market llama.cpp/vLLM apps use.
+  # The Router app builds its model entry from these manifest defaults; without
+  # them it lists the app with no model of its own. Not editable: the engine
+  # loads the GGUF paths from values.yaml, not from MODEL_SOURCE.
+  # The template falls back to the same values when Olares passes nothing, and
+  # testing/test_charts_render.py holds the two together.
+  - envName: MODEL_SOURCE
+    default: "hf://unsloth/Qwen3.8-27B-GGUF --include Qwen3.8-27B-UD-Q4_K_XL.gguf,hf://unsloth/Qwen3.8-27B-GGUF --include mmproj-F16.gguf,hf://z-lab/Qwen3.8-27B-DFlash2-GGUF --include Qwen3.8-27B-DFlash2-Q4_K_M.gguf"
+    type: string
+    required: true
+    description: >-
+      Target GGUF, vision projector and DFlash2 drafter, fetched by llm-init into the shared hub cache.
+    regex: "^hf://"
+  - envName: MODEL_NAME
+    default: "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL"
+    type: string
+    required: true
+    description: >-
+      The served model id, also the engine's --alias; llm-init waits for exactly this id on the engine's /v1/models.
+  - envName: MODEL_MODE
+    default: chat
+    type: string
+    required: true
+    options:
+      - title: Chat
+        value: chat
+  - envName: MODEL_SUPPORTS
+    default: "thinking,tools,vision"
+    type: string
+    required: true
+    description: The model capabilities.
+    options:
+      - title: Vision
+        value: vision
+      - title: Tools
+        value: tools
+      - title: Thinking
+        value: thinking
+      - title: None
+        value: none
+    multiSelect: true
+    splitter: ","
