@@ -129,6 +129,41 @@ def test_every_category_is_in_the_sidebar(site: Path) -> None:
     assert used <= set(info["data"]["tags"])
 
 
+def test_the_v2_probe_moves_with_the_v1_hash(site: Path) -> None:
+    """1.12.7 starts every sync here; a 404 aborts it before anything else runs."""
+    probe = read(site, "api", "v2", "catalog")["data"]
+    assert probe["schema_version"] == "v2"
+    assert probe["apps_filter_digest"] == read(site, "catalog.json")["hash"]
+    assert probe["apps_last_modify_time"] == probe["taxonomy_last_modify_time"] > 0
+
+
+def test_the_v2_taxonomy_lists_every_category_an_app_uses(site: Path) -> None:
+    """Without it, adding the source is refused for not serving a v2 taxonomy."""
+    taxonomy = read(site, "api", "v2", "taxonomy")["data"]
+    offered = {category["id"] for category in taxonomy["categories"]}
+    used = {
+        category
+        for row in read(site, "api", "v2", "applications")
+        for category in row["categories_v2"]
+    }
+    assert used <= offered
+    assert {page["category_id"] for page in taxonomy["pages"]} == offered
+
+
+def test_v2_timestamps_are_integers_in_their_own_units(site: Path) -> None:
+    """Milliseconds and seconds, side by side; the v1 ISO string is rejected."""
+    for row in read(site, "api", "v2", "applications"):
+        assert isinstance(row["last_modify_time"], int)
+        assert isinstance(row["updated_at"], int)
+        assert row["last_modify_time"] // 1000 == row["updated_at"]
+
+
+def test_v2_rows_address_apps_by_their_v1_ids(site: Path) -> None:
+    """The syncer fetches the records for these ids from the v1 POST."""
+    rows = read(site, "api", "v2", "applications")
+    assert {row["app_id"] for row in rows} == set(read(site, "catalog.json")["details"])
+
+
 def test_each_app_has_a_chart_at_the_url_olares_asks_for(site: Path) -> None:
     for app in read(site, "catalog.json")["summaries"].values():
         served = site / "api" / "v1" / "applications" / app["name"] / "chart"

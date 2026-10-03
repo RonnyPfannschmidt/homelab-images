@@ -247,12 +247,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        # Olares 1.12.7+ asks under /api/v2/ first and falls back to /api/v1/
-        # on a 404. Answering both saves the extra round trip.
-        path = unquote(parsed.path).replace("/api/v2/", "/api/v1/", 1)
         query = parse_qs(parsed.query)
 
         try:
+            if self._v2(unquote(parsed.path), query):
+                return
+
+            # The v1 endpoints 1.12.7 asks for under /api/v2/ first, falling
+            # back to /api/v1/ on a 404; answering both saves the round trip.
+            path = unquote(parsed.path).replace("/api/v2/", "/api/v1/", 1)
+
             if path in {"/health", "/healthz"}:
                 catalog = self.market.catalog()
                 self._json(
@@ -316,6 +320,65 @@ class Handler(BaseHTTPRequestHandler):
             self._github_hook(body)
             return
         self._json({"error": "Not Found", "path": path}, HTTPStatus.NOT_FOUND)
+
+    # -- the v2 sync -----------------------------------------------------
+
+    def _v2(self, path: str, query: dict[str, list[str]]) -> bool:
+        """The endpoints 1.12.7 syncs from, which have no v1 counterpart.
+
+        They are tested before the v2-to-v1 rewrite, because that rewrite is
+        what used to turn `/api/v2/catalog` into a 404 for `/api/v1/catalog`
+        and abort every sync at its first step.
+        """
+        if path == "/api/v2/catalog":
+            probe = self._stored("api/v2/catalog")
+            source_id = (query.get("source_id") or [""])[0]
+            if source_id:
+                probe["data"]["source_id"] = source_id
+            self._json(probe)
+            return True
+
+        if path == "/api/v2/taxonomy":
+            self._json(self._stored("api/v2/taxonomy"))
+            return True
+
+        if path in {"/api/v2/applications", "/api/v2/browse/applications"}:
+            self._json(self._applications_page(query))
+            return True
+
+        return False
+
+    def _applications_page(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        """One page of rows; no `size` means all of them, which is what the syncer asks."""
+        path = self.market.path("api", "v2", "applications")
+        if path is None:
+            raise FileNotFoundError("api/v2/applications")
+        rows: list[dict[str, Any]] = json.loads(path.read_text())
+
+        def number(name: str, default: int) -> int:
+            try:
+                return int((query.get(name) or [str(default)])[0])
+            except ValueError:
+                return default
+
+        size = max(0, number("size", 0))
+        page = max(1, number("page", 1))
+        items = rows[(page - 1) * size : page * size] if size else rows
+        return {
+            "code": 0,
+            "msg": "success",
+            "data": {
+                "items": items,
+                # A chart deleted from the repository simply stops being
+                # listed; nothing here records that it once was.
+                "removed": [],
+                "has_more": bool(size) and page * size < len(rows),
+                "max_last_modify_time": max((row["last_modify_time"] for row in rows), default=0),
+                "total": len(rows),
+                "page": page,
+                "page_size": size or len(rows),
+            },
+        }
 
     # -- the two POSTs ---------------------------------------------------
 
