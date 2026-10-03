@@ -1,14 +1,25 @@
 """Render the charts in `olares-apps/` into the tree an Olares Market source serves.
 
-An Olares "market source" is four HTTP endpoints, not a Helm repository:
+An Olares "market source" is a handful of HTTP endpoints, not a Helm
+repository. Up to 1.12.6 there are four:
 
     GET  /api/v1/appstore/hash            has the catalog changed
     GET  /api/v1/appstore/info            the whole catalog, summaries only
     POST /api/v1/applications/info        the full record for a list of app ids
     GET  /api/v1/applications/<app>/chart the packaged chart
 
-Three of them are GETs whose response depends on nothing the caller sends, so
-three of them are files. That is what this script writes: a directory that
+1.12.7 drives the sync from three more, and adding a source probes them:
+
+    GET  /api/v2/catalog                  has anything changed, as timestamps
+    GET  /api/v2/taxonomy                 the categories and the sidebar
+    GET  /api/v2/applications             one row per app, paginated on request
+
+These have no v1 fallback: a 404 on `catalog` aborts the whole sync, and one
+on `taxonomy` is the "does not serve a v2 taxonomy" refusal at add time. The
+app records stay on the v1 POST - 1.12.7 still asks for them there.
+
+Every GET's response depends on little or nothing the caller sends, so each
+of them is a file. That is what this script writes: a directory that
 `serve.py` serves as-is, plus the `catalog.json` it reads to answer the POST.
 Nothing in it is state - all of it is derived from the charts in this
 repository.
@@ -69,6 +80,16 @@ CATEGORY_ICON = "https://app.cdn.olares.com/icons/market/sidebar/neurology.svg"
 #: derived from anything here and nothing reads it back, so it is a constant
 #: rather than another thing a rebuild can churn.
 SIDEBAR_CREATED_AT = "2026-09-22T00:00:00.000000000Z"
+
+#: The id the v2 endpoints name this source by. Olares sends its own as
+#: `?source_id=` on the catalog probe, and `serve.py` echoes that in
+#: preference; this is what a caller that sends none gets.
+SOURCE_ID = "olares-market.ronnypfannschmidt"
+
+#: The Olares versions the apps declare they install on. The v2 row carries
+#: it per app; the charts here do not state one, and every one of them was
+#: written against the 1.12 line.
+OLARES_VERSION_CONSTRAINT = ">=1.12.3-0"
 
 
 def iso_nanos(when: dt.datetime) -> str:
@@ -141,7 +162,8 @@ class App:
         self.name: str = self.chart["name"]
         self.version: str = str(self.metadata.get("version") or self.chart["version"])
         self.id = app_id(self.name)
-        self.updated_at = iso_nanos(chart_changed_at(directory))
+        self.changed_at = chart_changed_at(directory)
+        self.updated_at = iso_nanos(self.changed_at)
 
     @property
     def categories(self) -> list[str]:
@@ -390,6 +412,102 @@ def appstore_info(catalog: dict[str, Any], built_at: str) -> dict[str, Any]:
     }
 
 
+def epoch_millis(when: dt.datetime) -> int:
+    return int(when.timestamp() * 1000)
+
+
+def v2_catalog(stamp: int, catalog: dict[str, Any]) -> dict[str, Any]:
+    """`GET /api/v2/catalog` - the probe every v2 sync starts with.
+
+    Olares compares the two timestamps with what it stored and re-reads
+    taxonomy and applications only when they moved. The digest is the
+    content hash, so it moves exactly when the v1 hash does.
+    """
+    return {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "schema_version": "v2",
+            "source_id": SOURCE_ID,
+            "taxonomy_last_modify_time": stamp,
+            "apps_last_modify_time": stamp,
+            "apps_filter_digest": catalog["hash"],
+        },
+    }
+
+
+def v2_taxonomy(stamp: int, catalog: dict[str, Any]) -> dict[str, Any]:
+    """`GET /api/v2/taxonomy` - the v1 sidebar, reshaped into flat lists.
+
+    One page per category holding an `all` block, which Olares renders as
+    every app filed under it; there are no curated topics here to list.
+    """
+    categories = catalog["categories"]
+    return {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "last_modify_time": stamp,
+            "source": {
+                "source_id": SOURCE_ID,
+                "short_label": "homelab",
+                "display_name": {"en-US": "homelab Olares apps"},
+                "icon": CATEGORY_ICON,
+                "is_official": False,
+            },
+            "languages": [{"code": "en-US", "display_name": "English", "sort": 1, "enabled": True}],
+            "categories": [
+                {
+                    "id": category,
+                    "builtin": False,
+                    "sort": 10 + index,
+                    "icon": CATEGORY_ICON,
+                    "title": {"en-US": category},
+                    "description": {},
+                }
+                for index, category in enumerate(categories)
+            ],
+            "nav": categories,
+            "pages": [
+                {"category_id": category, "items": [{"id": "all", "type": "all"}]}
+                for category in categories
+            ],
+            "tags": [],
+            "topic_lists": [],
+            "topics": [],
+            "recommends": [],
+        },
+    }
+
+
+def v2_applications(apps: Iterable[App], public_url: str) -> list[dict[str, Any]]:
+    """`GET /api/v2/applications` - the rows, before `serve.py` pages them.
+
+    The units differ and both are integers: `last_modify_time` is epoch
+    milliseconds, `updated_at` epoch seconds. The v1 ISO string in
+    `updated_at` is rejected by the decoder outright.
+    """
+    return [
+        {
+            "app_id": app.id,
+            "name": app.name,
+            "title": app.metadata.get("title") or app.name,
+            "version": app.version,
+            "icon": app.icon(public_url),
+            "featured_image": "",
+            "cfg_type": app.manifest.get("olaresManifest.type") or "app",
+            "categories": app.categories,
+            "categories_v2": app.categories,
+            "tags": app.tags or [],
+            "app_labels": [],
+            "olares_version_constraint": OLARES_VERSION_CONSTRAINT,
+            "last_modify_time": epoch_millis(app.changed_at),
+            "updated_at": int(app.changed_at.timestamp()),
+        }
+        for app in apps
+    ]
+
+
 def package_charts(apps: Iterable[App], out: Path) -> None:
     """Package each chart into `charts/`, and again under the API path.
 
@@ -515,6 +633,10 @@ def main(argv: list[str] | None = None) -> int:
         {"hash": catalog["hash"], "last_updated": built_at, "version": MARKET_VERSION},
     )
     write_json(out / "api" / "v1" / "appstore" / "info", appstore_info(catalog, built_at))
+    stamp = epoch_millis(max(app.changed_at for app in apps))
+    write_json(out / "api" / "v2" / "catalog", v2_catalog(stamp, catalog))
+    write_json(out / "api" / "v2" / "taxonomy", v2_taxonomy(stamp, catalog))
+    write_json(out / "api" / "v2" / "applications", v2_applications(apps, public_url))
     # The POST endpoint's payload, served here as a GET. Static hosting
     # answers POST with 405, so this file is what the Worker reads and what a
     # human can look at; it is not the endpoint itself.

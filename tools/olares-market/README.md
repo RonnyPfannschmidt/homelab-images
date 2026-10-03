@@ -11,7 +11,8 @@ like any other.
 
 ## What a market source actually is
 
-Four endpoints. Not a Helm repository, and not an `index.yaml`:
+A handful of endpoints. Not a Helm repository, and not an `index.yaml`.
+Up to Olares 1.12.6, four:
 
 | Endpoint | Method | What it answers |
 |---|---|---|
@@ -20,11 +21,26 @@ Four endpoints. Not a Helm repository, and not an `index.yaml`:
 | `/api/v1/applications/info` | **POST** | the full record for a list of app ids — the app page, and what the installer reads |
 | `/api/v1/applications/<app>/chart` | GET | the packaged chart, `?fileName=<app>-<version>.tgz` |
 
-Olares 1.12.7+ asks under `/api/v2/` first and falls back to `/api/v1/` on a
-404; both prefixes are answered.
+Olares 1.12.7 syncs from three more, which have **no v1 fallback**:
+
+| Endpoint | Method | What it answers |
+|---|---|---|
+| `/api/v2/catalog` | GET | two timestamps and a digest; the first step of every sync |
+| `/api/v2/taxonomy` | GET | the categories and sidebar pages, as flat lists |
+| `/api/v2/applications` | GET | one row per app (also `/api/v2/browse/applications`), paged by `?page=&size=` |
+
+A 404 on `catalog` aborts the sync before any other step runs, so a source
+added under 1.12.6 keeps showing its last catalog and never updates again. A
+404 on `taxonomy` is what refuses a new source outright, with an error about
+not serving a v2 taxonomy. The app records stay on the v1 POST, and for the
+hash, info and chart endpoints 1.12.7 asks under `/api/v2/` first and falls
+back to `/api/v1/` on a 404; both prefixes are answered.
+
+In the v2 rows `last_modify_time` is epoch milliseconds and `updated_at` epoch
+seconds, both integers; the v1 ISO string in `updated_at` is rejected.
 
 The protocol is not documented by upstream. It was read off a working
-third-party source — [aamsellem/olares-one-market][ref], whose Worker and
+third-party source (the v2 half from its commit `39e2d0c`) — [aamsellem/olares-one-market][ref], whose Worker and
 catalog builder are public — and the field shapes here follow it. Two of its
 findings are load-bearing and fail silently when ignored: timestamps must
 carry nine digits of fraction, and the flat `apps` dictionary alone parses to
@@ -129,7 +145,8 @@ here because the tool has to be installable without that repository.
 The service runs the generator *out of the checkout*, so a push that changes
 `build_market.py` takes effect on the next build. A push that changes
 `serve.py` needs `supervisorctl restart olares-market` — the running process
-is the old file.
+is the old file. `fleet` does that restart when it finds `serve.py` newer
+than the process running it.
 
 ## Packaging without helm
 

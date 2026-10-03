@@ -127,6 +127,31 @@ def test_the_v2_prefix_is_answered_too(base_url: str) -> None:
     assert get(f"{base_url}/api/v2/appstore/hash")[0] == 200
 
 
+@pytest.mark.parametrize("path", ["catalog", "taxonomy", "applications", "browse/applications"])
+def test_the_v2_sync_endpoints_answer_under_v2(base_url: str, path: str) -> None:
+    """These have no v1 counterpart, so the v2-to-v1 rewrite must not reach them."""
+    status, body = get(f"{base_url}/api/v2/{path}")
+    assert status == 200
+    assert json.loads(body)["code"] == 0
+
+
+def test_the_v2_probe_echoes_the_source_id_it_was_registered_under(base_url: str) -> None:
+    _, body = get(f"{base_url}/api/v2/catalog?source_id=somebody.else")
+    assert json.loads(body)["data"]["source_id"] == "somebody.else"
+
+
+def test_v2_applications_are_paged_only_when_asked(base_url: str) -> None:
+    _, body = get(f"{base_url}/api/v2/applications")
+    everything = json.loads(body)["data"]
+    assert len(everything["items"]) == everything["total"] > 1
+    assert not everything["has_more"]
+
+    _, body = get(f"{base_url}/api/v2/applications?page=2&size=1")
+    second = json.loads(body)["data"]
+    assert second["items"] == everything["items"][1:2]
+    assert second["has_more"] == (everything["total"] > 2)
+
+
 def test_a_chart_is_served_at_the_url_olares_asks_for(base_url: str, state: Path) -> None:
     catalog = json.loads((state / "current" / "catalog.json").read_text())
     app = next(iter(catalog["summaries"].values()))
