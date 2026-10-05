@@ -50,14 +50,14 @@ repos:
     args: [--maxkb=512]
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.16.8
+  rev: v0.16.10
   hooks:
   - id: ruff-check
     args: [--fix]
   - id: ruff-format
 
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v2.3.1
+  rev: v2.4.0
   hooks:
   - id: mypy
     args: [--strict]
@@ -82,7 +82,7 @@ repos:
 # upstream does not have, so a `rev` bump here can fail on checks that have
 # nothing to do with runner labels.
 - repo: https://github.com/kjanat/actionlint
-  rev: github-actions-expressions-of-concern
+  rev: v1.17.0
   hooks:
   - id: actionlint
     # actionlint runs shellcheck over every `run:` block, which is most of what
