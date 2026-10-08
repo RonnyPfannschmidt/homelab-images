@@ -19,3 +19,6 @@ __pycache__/
 
 # Worker toolchain; `npx wrangler deploy` installs it on demand.
 node_modules/
+
+# Claude Desktop downloads and the RPMs built from them; proprietary, never committed.
+/tools/claude-desktop-rpm/dist/
