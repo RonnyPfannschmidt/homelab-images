@@ -131,7 +131,7 @@ spec:
               name: run-state
       containers:
         - name: llm-init
-          image: docker.io/beclab/llm-init:v1.7.12
+          image: docker.io/beclab/llm-init:v1.7.21
           envFrom:
             - configMapRef:
                 name: hyperqwen-llminit-env

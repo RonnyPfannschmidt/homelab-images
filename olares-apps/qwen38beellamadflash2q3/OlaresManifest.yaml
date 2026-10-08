@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8 27B at UD-Q3_K_XL on BeeLlama.cpp preview-v0.4.7 — DFlash2 block drafting + mmproj F16 + kvarn3 KV @ 64K"
   title: Qwen38 27B BeeLlama DFlash2 Q3
-  version: 1.0.2
+  version: 1.0.3
   # AI Agents is what makes openwebui-sync pick the app up as a model provider.
   categories:
     - Vision
@@ -48,8 +48,9 @@ spec:
   # Required by lint whenever options.shared is true: a shared app serves every
   # user on the cluster, so only an admin may install it.
   onlyAdmin: true
-  versionName: 1.0.2
+  versionName: 1.0.3
   upgradeDescription: |
+    v1.0.3: llm-init moves from v1.3.1 to v1.7.21, the version the market's chat apps pin. Nothing in this chart's llm-init environment is one v1.7.21 retired.
     v1.0.2: the model is declared the way the market apps declare it. `MODEL_SOURCE`, `MODEL_NAME`, `MODEL_MODE` and `MODEL_SUPPORTS` are manifest envs with defaults, and the Router app builds its model entry from them; before this it listed the app with no model of its own. `MODEL_SUPPORTS` uses the market's short form (`thinking,tools,vision`) and the chart expands it to llm-init's `supports_*` keys. Nothing the pods receive changes.
     v1.0.1: listed in the Router app. Router registers a model app only through a shared entrance, and this chart declared none, so the gateway stored the placeholder address `model-application-address-unknown.invalid` and never showed the model. It now publishes `sharedentrances-api`, port 80 onto llm-init, as the market llama.cpp and vLLM apps do.
     v1.0.0: the qwen38beellamadflash2 chart at UD-Q3_K_XL instead of
