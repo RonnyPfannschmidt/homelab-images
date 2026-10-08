@@ -13,6 +13,7 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -133,3 +134,35 @@ def test_the_pinned_key_file_is_the_key_anthropic_publishes() -> None:
 def test_an_unsigned_inrelease_is_refused() -> None:
     with pytest.raises(build.VerificationError, match="not validly signed"):
         build.verify_inrelease(RELEASE.encode())
+
+
+def ar_member(name: bytes, mtime: int, data: bytes) -> bytes:
+    header = (
+        name.ljust(16)
+        + str(mtime).encode().ljust(12)
+        + b"0".ljust(6)
+        + b"0".ljust(6)
+        + b"100644".ljust(8)
+        + str(len(data)).encode().ljust(10)
+        + b"`\n"
+    )
+    return header + data + b"\n" * (len(data) % 2)
+
+
+def test_the_build_date_is_the_data_members_mtime(tmp_path: Path) -> None:
+    # An odd-length member before it checks the ar padding is skipped correctly.
+    deb = tmp_path / "x.deb"
+    deb.write_bytes(
+        b"!<arch>\n"
+        + ar_member(b"debian-binary", 1, b"2.0\n")
+        + ar_member(b"control.tar.xz", 2, b"odd")
+        + ar_member(b"data.tar.xz", 1791365405, b"payload")
+    )
+    assert build.deb_epoch(deb) == 1791365405
+
+
+def test_a_file_that_is_not_a_deb_has_no_build_date(tmp_path: Path) -> None:
+    deb = tmp_path / "x.deb"
+    deb.write_bytes(b"PK\x03\x04 not an ar archive")
+    with pytest.raises(build.VerificationError, match="not an ar archive"):
+        build.deb_epoch(deb)

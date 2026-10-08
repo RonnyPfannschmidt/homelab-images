@@ -38,6 +38,20 @@ in the [Linux install docs](https://code.claude.com/docs/en/desktop-linux)).
 `.deb` must match the size and hash `Packages` gives for it. Anything else stops
 the build.
 
+## Reproducible
+
+The same `.deb` builds a bit-identical RPM, so a build on another machine can
+be checked against this one with `sha256sum`. Four things make it so:
+
+- the RPM's build time and file mtimes are the `.deb`'s build time
+  (`SOURCE_DATE_EPOCH`, read from the `.deb`'s `ar` header),
+- the build host is a fixed name,
+- the Fedora image is pinned by digest in `build.py`, and
+- the build tools come only from that release's `fedora` repository, which
+  never changes after release, never from `updates`.
+
+Moving the image digest changes the toolchain, and with it the bytes.
+
 ## How the RPM differs from the deb
 
 The deb's maintainer scripts do five things on install. The RPM:

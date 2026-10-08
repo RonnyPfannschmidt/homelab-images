@@ -16,8 +16,13 @@
 %global debug_package %{nil}
 %global __strip /bin/true
 %global _build_id_links none
-# There is no %changelog to date the build from; upstream's history is theirs.
+# Reproducible: build.py sets SOURCE_DATE_EPOCH to the .deb's build time, and
+# the RPM takes its build time, file mtimes and host from that, not the build.
+# There is no %changelog to date it from; upstream's history is theirs.
 %global source_date_epoch_from_changelog 0
+%global use_source_date_epoch_as_buildtime 1
+%global clamp_mtime_to_source_date_epoch 1
+%global _buildhost claude-desktop-rpm
 # The bundled libraries are private to the app, so they must neither satisfy
 # nor create dependencies on the rest of the system.
 %global __provides_exclude_from ^%{appdir}/.*$

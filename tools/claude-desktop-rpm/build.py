@@ -13,6 +13,11 @@ the signed `InRelease` records for it; the .deb must match the SHA256 and size
 that the index records for it. Only the text gpgv prints back as verified is
 read, never the raw clearsigned file, so an unsigned section around the
 signature cannot slip a different hash in.
+
+The build is reproducible: the same .deb gives a bit-identical RPM. The build
+date is the .deb's own, the Fedora image is pinned by digest, and the build
+tools come only from that release's `fedora` repository, which never changes
+after release, never from `updates`.
 """
 
 from __future__ import annotations
@@ -44,7 +49,12 @@ SPEC = HERE / "claude-desktop.spec"
 #: rpm's architecture name for each Debian one the repository publishes.
 DEB_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
 
-DEFAULT_IMAGE = "registry.fedoraproject.org/fedora:44"
+#: fedora:44 as of 2026-10-08, by manifest-list digest so it holds for both
+#: architectures. Moving it changes the toolchain and so the RPM's bytes.
+DEFAULT_IMAGE = (
+    "registry.fedoraproject.org/fedora:44"
+    "@sha256:ba35579e107f26a4c2c000390fb3ff549f3858a9584a6b5a35f7fa51f54de309"
+)
 
 
 class VerificationError(Exception):
@@ -188,6 +198,24 @@ def download_deb(entry: DebEntry, cache: Path) -> Path:
     return target
 
 
+def deb_epoch(deb: Path) -> int:
+    """When the .deb was built: the mtime its ar header records for data.tar.
+
+    dpkg-deb stamps every member with the build time, and the files inside
+    carry the same instant, so this is the date without decompressing the
+    payload.
+    """
+    with deb.open("rb") as f:
+        if f.read(8) != b"!<arch>\n":
+            raise VerificationError(f"{deb.name} is not an ar archive")
+        while header := f.read(60):
+            name, mtime, size = header[:16].strip(), int(header[16:28]), int(header[48:58])
+            if name.startswith(b"data.tar"):
+                return mtime
+            f.seek(size + size % 2, 1)
+    raise VerificationError(f"{deb.name} has no data.tar member")
+
+
 def rpmbuild(entry: DebEntry, deb: Path, arch: str, out: Path, image: str) -> None:
     """Run rpmbuild in a throwaway Fedora container and leave the RPM in `out`."""
     with tempfile.TemporaryDirectory(dir=out, prefix=".rpmbuild-") as tmp:
@@ -199,7 +227,7 @@ def rpmbuild(entry: DebEntry, deb: Path, arch: str, out: Path, image: str) -> No
         # result is already owned by them. A chown inside would hand it to a
         # subordinate uid that the caller cannot even delete.
         script = (
-            "dnf -y -q install rpm-build binutils tar xz >/dev/null"
+            "dnf -y -q install --repo=fedora rpm-build binutils tar xz >/dev/null"
             f" && rpmbuild -bb --target {arch}"
             " --define '_topdir /work'"
             f" --define 'upstream_version {entry.version}'"
@@ -211,6 +239,8 @@ def rpmbuild(entry: DebEntry, deb: Path, arch: str, out: Path, image: str) -> No
                 "run",
                 "--rm",
                 "--pull=missing",
+                "--env",
+                f"SOURCE_DATE_EPOCH={deb_epoch(deb)}",
                 "--volume",
                 f"{topdir}:/work:Z",
                 image,
@@ -252,7 +282,8 @@ def main() -> None:
     parser.add_argument(
         "--image",
         default=DEFAULT_IMAGE,
-        help="Fedora image rpmbuild runs in (default: %(default)s)",
+        help="Fedora image rpmbuild runs in; another one builds different bytes"
+        " (default: %(default)s)",
     )
     parser.add_argument(
         "--check",
