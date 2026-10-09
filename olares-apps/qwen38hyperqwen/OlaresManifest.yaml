@@ -13,7 +13,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8 27B on patched vLLM via HyperQwen — W4A16 AutoRound, DFlash2 block drafting, image input, serving profile switchable from Settings"
   title: Qwen38 27B HyperQwen
-  version: 1.3.3
+  version: 1.3.4
   # "AI Agents" is load-bearing beyond the market UI: openwebui-sync treats an
   # app as model-serving when its name starts with an engine prefix
   # (llamacpp/vllm/ollama/...) or when a category is one of ai / vision /
@@ -51,8 +51,9 @@ sharedEntrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.3.3
+  versionName: 1.3.4
   upgradeDescription: |
+    v1.3.4: llm-init moves from v1.7.12 to v1.7.21, the version the market's chat apps pin. Nothing in this chart's llm-init environment is one v1.7.21 retired. The card still gets no `context_size` from llm-init, because this engine has no `ENGINE_ARGS`; on the box it was written onto the card by hand on 2026-10-09 and survives the upgrade, since the card on disk wins over the chart.
     v1.3.3: the model is declared the way the market apps declare it. `MODEL_SOURCE`, `MODEL_NAME`, `MODEL_MODE` and `MODEL_SUPPORTS` are manifest envs with defaults, and the Router app builds its model entry from them; before this it listed the app with no model of its own. `MODEL_SUPPORTS` uses the market's short form (`thinking,tools,vision`) and the chart expands it to llm-init's `supports_*` keys. Nothing the pods receive changes.
     v1.3.2: listed in the Router app. Router registers a model app only through a shared entrance, and this chart declared none, so the gateway stored the placeholder address `model-application-address-unknown.invalid` and never showed the model. It now publishes `sharedentrances-api`, port 80 onto llm-init, as the market llama.cpp and vLLM apps do.
     `metadata.bento` is gone: the market's manifest validator now rejects it (`metadata field "bento" is not part of the manifest schema`), which blocked uploading this version although 1.3.1 went through with it.
