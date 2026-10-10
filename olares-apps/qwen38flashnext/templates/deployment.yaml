@@ -1,0 +1,478 @@
+---
+{{- $sources := list }}
+{{- range .Values.model.target.files }}
+{{- $sources = append $sources (printf "hf://%s --include %s" $.Values.model.target.repo .) }}
+{{- end }}
+{{- with .Values.model.mmproj.repo }}
+{{- $sources = append $sources (printf "hf://%s --include %s" . $.Values.model.mmproj.file) }}
+{{- end }}
+{{- $modelName := .Values.olaresEnv.MODEL_NAME | default (printf "%s:%s" .Values.model.target.repo .Values.model.target.quant) }}
+{{- $modelMode := .Values.olaresEnv.MODEL_MODE | default "chat" }}
+{{- $modelSupports := .Values.olaresEnv.MODEL_SUPPORTS | default "thinking,tools,vision" }}
+{{- $modelSource := .Values.olaresEnv.MODEL_SOURCE | default (join "," $sources) }}
+# Runtime config shared by the llm-init downloader and the wrapper script that
+# waits for it. Single source of truth is .Values.model.* (values.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flashnext-env
+  namespace: "{{ .Release.Namespace }}"
+data:
+  TARGET_REPO: "{{ .Values.model.target.repo }}"
+  # Space-separated: shard paths contain no spaces, and the wrapper is sh.
+  TARGET_FILES: "{{ join " " .Values.model.target.files }}"
+  MMPROJ_REPO: "{{ .Values.model.mmproj.repo }}"
+  MMPROJ_FILE: "{{ .Values.model.mmproj.file }}"
+  # MUST equal llm-init's MODEL_NAME: llm-init only enables its OpenAI data
+  # plane once the engine's /v1/models advertises exactly this id, and answers
+  # 503 {"code":"not_ready"} forever otherwise.
+  MODEL_ALIAS: "{{ $modelName }}"
+  CTX_SIZE: "{{ .Values.model.ctxSize }}"
+  CACHE_TYPE: "{{ .Values.model.cacheType }}"
+  THREADS: "{{ .Values.model.threads }}"
+  MOE_CACHE_MIB: "{{ .Values.model.moeCacheMiB }}"
+  CACHE_RAM_MIB: "{{ .Values.model.cacheRamMiB }}"
+  SAMPLING_TEMP: "{{ .Values.model.sampling.temp }}"
+  SAMPLING_TOP_P: "{{ .Values.model.sampling.topP }}"
+  SAMPLING_TOP_K: "{{ .Values.model.sampling.topK }}"
+  SAMPLING_MIN_P: "{{ .Values.model.sampling.minP }}"
+  LLAMACPP_PORT: "8081"
+  HF_HUB_CACHE: "/cache/hf/hub"
+---
+# Wrapper the engine container runs. llm-init downloads into the shared HF
+# cache while this pod is already scheduled, so the wrapper waits for every
+# file, resolves the paths itself (llm-init only auto-wires one main file and
+# one mmproj, and knows nothing of shards), and execs llama-server.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flashnext-wrapper
+  namespace: "{{ .Release.Namespace }}"
+data:
+    flashnext.sh: |
+        #!/bin/sh
+        set -eu
+
+        HF_HUB_CACHE=${HF_HUB_CACHE:-/cache/hf/hub}
+        # stderr: find_cached_file runs inside $(...), so stdout would be
+        # captured instead of logged.
+        log() { printf '[wrapper-flashnext] %s\n' "$*" >&2; }
+
+        find_cached_file() {
+            # A snapshot entry is a symlink into blobs/ that huggingface_hub
+            # creates only once the blob is complete, so `-s` on it (following
+            # the link) is the readiness signal. `-path` rather than `-name`
+            # because the shards live in a per-quant subdirectory.
+            repo_dir="$HF_HUB_CACHE/models--$(echo "$1" | sed 's#/#--#')"
+            deadline=$(( $(date +%s) + ${WAIT_TIMEOUT:-14400} ))
+            while :; do
+                found=$(find "$repo_dir/snapshots" -path "*/$2" 2>/dev/null | head -1)
+                if [ -n "$found" ] && [ -s "$found" ]; then
+                    echo "$found"
+                    return 0
+                fi
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                    log "ERROR: gave up waiting for $2 under $repo_dir/snapshots after ${WAIT_TIMEOUT:-14400}s"
+                    return 1
+                fi
+                log "waiting for $2 (llm-init still downloading)"
+                sleep 30
+            done
+        }
+
+        FIRST_SHARD=""
+        for f in $TARGET_FILES; do
+            path=$(find_cached_file "$TARGET_REPO" "$f")
+            log "shard=$path"
+            [ -n "$FIRST_SHARD" ] || FIRST_SHARD=$path
+        done
+
+        # --batch-size/--ubatch-size 2048 are mandatory >= image_max_tokens for
+        # the non-causal vision encoder (llama.cpp PR #21550). Text-only drops
+        # back to the defaults.
+        MMPROJ_ARGS=""
+        BATCH_ARGS=""
+        if [ -n "${MMPROJ_REPO:-}" ] && [ -n "${MMPROJ_FILE:-}" ]; then
+            MMPROJ_PATH=$(find_cached_file "$MMPROJ_REPO" "$MMPROJ_FILE")
+            log "mmproj=$MMPROJ_PATH"
+            MMPROJ_ARGS="--mmproj $MMPROJ_PATH"
+            BATCH_ARGS="--batch-size 2048 --ubatch-size 2048"
+        else
+            log "vision disabled (no mmproj.repo configured)"
+        fi
+
+        LLAMA_SERVER=$(command -v llama-server 2>/dev/null || echo /app/llama-server)
+        log "engine=$LLAMA_SERVER"
+
+        # Where each part of the model lives:
+        #
+        # -ngl 99 puts every layer on the GPU, then two overrides take the big
+        # parts back off it. -cmoe keeps all routed experts (ffn_*_exps) in
+        # host RAM, and --moe-cache-mib serves the hot ones from a GPU LRU.
+        # `-ot per_layer_token_embd` keeps the 26.8 GiB n-gram table on the
+        # CPU, where it is read a few rows per token.
+        #
+        # mmap stays ON, unlike the other llama.cpp charts here, which pass
+        # --no-mmap. It is what lets the n-gram table page in from NVMe on
+        # demand rather than being read whole into anonymous memory, and it
+        # makes the experts page cache rather than anon: reclaimable under
+        # pressure (and re-read from disk) instead of an OOMKill. --no-mmap
+        # would want ~72 GiB of anonymous memory on a node with ~53 GiB free.
+        # --mlock is absent for the same reason: it would pin the table too.
+        #
+        # -fit off: with CUDA_DEVICE_MEMORY_LIMIT*=0, HAMi-core's cuMemGetInfo
+        # hook can report garbage once its counter drifts, so nothing may size
+        # itself from free device memory. Every size here is pinned instead,
+        # which is also why the expert placement is -cmoe plus a cache rather
+        # than --fit choosing how many expert layers go on the card.
+        #
+        # No --spec-type: the MTP draft head needs ggml-org/llama.cpp#27836,
+        # which is not merged.
+        exec "$LLAMA_SERVER" \
+            --model "$FIRST_SHARD" \
+            $MMPROJ_ARGS \
+            --alias "${MODEL_ALIAS:-$MODEL_NAME}" \
+            --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
+            -ngl 99 \
+            -cmoe \
+            --moe-cache-mib "${MOE_CACHE_MIB:-8192}" \
+            -ot 'per_layer_token_embd\.weight=CPU' \
+            --ctx-size "${CTX_SIZE:-131072}" \
+            --threads "${THREADS:-16}" \
+            --cache-type-k "${CACHE_TYPE:-q8_0}" \
+            --cache-type-v "${CACHE_TYPE:-q8_0}" \
+            --cache-ram "${CACHE_RAM_MIB:-2048}" \
+            $BATCH_ARGS \
+            --parallel 1 --kv-unified \
+            --flash-attn on --jinja \
+            --metrics \
+            -fit off \
+            --temp "${SAMPLING_TEMP:-1.0}" \
+            --top-p "${SAMPLING_TOP_P:-0.95}" \
+            --top-k "${SAMPLING_TOP_K:-20}" \
+            --min-p "${SAMPLING_MIN_P:-0.0}"
+---
+# llm-init: downloads the shards and the projector into the platform-shared HF
+# cache, reports progress, and is the app's permanent entrance (progress
+# dashboard before ready, OpenAI/Anthropic-compatible proxy to llama-server
+# after). Runs on default-scheduler with no GPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: llm-init
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.llminit.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: llm-init
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: llm-init
+        app.bytetrade.io/shared-entrance: "true"
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      initContainers:
+        - name: init-chown
+          image: docker.io/beclab/aboveos-busybox:1.37.0
+          command:
+            - sh
+            - -c
+            - mkdir -p /cache/hf/hub/.locks && chown -R 1000:1000 /cache/hf/hub /run/llm-init || true
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      containers:
+        - name: llm-init
+          image: docker.io/beclab/llm-init:v1.7.21
+          envFrom:
+            - configMapRef:
+                name: flashnext-env
+          env:
+            - name: ENGINE_KIND
+              value: llamacpp
+            - name: MODEL_NAME
+              value: "{{ $modelName }}"
+            - name: MODEL_MODE
+              value: "{{ $modelMode }}"
+            # vision is dropped when no projector is loaded.
+            - name: MODEL_SUPPORTS
+              value: "{{ include "model.supports" (dict "supports" $modelSupports "vision" (not (empty .Values.model.mmproj.repo))) }}"
+            # One source per shard. Each carries the shard's path inside the
+            # repo, subdirectory included; one `--include` per source is the
+            # only form the market charts use, so no glob is relied on.
+            - name: MODEL_SOURCE
+              value: "{{ $modelSource }}"
+            - name: HF_ENDPOINT
+              value: "https://huggingface.co/"
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: RUN_DIR
+              value: /run/llm-init
+            - name: PORT
+              value: "8090"
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_FORMAT
+              value: json
+            - name: APP_URL
+              value: "{{ .Values.olaresEnv.APP_URL }}"
+          ports:
+            - containerPort: 8090
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8090
+              scheme: HTTP
+            failureThreshold: 3
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          readinessProbe:
+            # /livez, NOT /readyz: readyz stays 503 until the engine is up,
+            # which is the ~77 GiB download this workload keeps off the
+            # install's critical path.
+            httpGet:
+              path: /livez
+              port: 8090
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+            - mountPath: /run/llm-init
+              name: run-state
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface
+            type: DirectoryOrCreate
+        - name: run-state
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+      restartPolicy: Always
+      schedulerName: default-scheduler
+---
+# llama.cpp GPU server: reads the shards from the shared HF cache populated by
+# llm-init and execs llama-server through the wrapper above.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: llamacpp
+  name: "{{ .Chart.Name }}"
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  replicas: {{ .Values.workloads.qwen38flashnext.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: llamacpp
+  strategy:
+    # Recreate: one GPU, and a second pod would sit Pending on
+    # nvidia.com/gpumem while the first is never told to terminate.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/chrome-default: "true"
+        io.kompose.service: llamacpp
+        io.bytetrade.app: "true"
+        applications.app.bytetrade.io/name: "{{ .Release.Name }}"
+        applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+    spec:
+      containers:
+        - name: llamacpp
+          # Stock upstream llama.cpp, CUDA 13 build b11515, the newest
+          # cuda13 server image published after --moe-cache-mib landed
+          # (ggml-org/llama.cpp#29887, merged 2026-10-07 as d6cf9acb).
+          # Manifest digest
+          # sha256:6869e4456217802e5372774be236a9aa93666cfb7f033b7d39cd58b178af6489,
+          # recorded rather than pinned with `@`, as on the other charts.
+          # CUDA 13 because the box is sm_120 Blackwell.
+          image: "ghcr.io/ggml-org/llama.cpp:server-cuda13-b11515"
+          command: ["/bin/sh", "/llm-init/wrappers/flashnext.sh"]
+          envFrom:
+            - configMapRef:
+                name: flashnext-env
+          env:
+            - name: ENGINE_KIND
+              value: llamacpp
+            - name: MODEL_NAME
+              value: "{{ $modelName }}"
+            - name: GPU_TYPE
+              value: nvidia
+            - name: TZ
+              value: Etc/UTC
+            # "0" = unlimited, carried over from the beellama charts: the only
+            # setting that disarms HAMi-core's false-OOM abort, whose usage
+            # counter drifts negative under alloc/free churn and then beats any
+            # positive limit. The HAMi scheduler still reserves gpumem below.
+            # See docs/olares-qwen36beellama.md in the private repository.
+            - name: CUDA_DEVICE_MEMORY_LIMIT
+              value: "0"
+            - name: CUDA_DEVICE_MEMORY_LIMIT_0
+              value: "0"
+            - name: CUDA_CACHE_PATH
+              value: /cuda-cache/nv-compute
+            - name: CUDA_CACHE_MAXSIZE
+              value: "4294967296"
+            # ~77 GiB to download before the engine can start: four hours of
+            # waiting before the wrapper gives up, inside the startupProbe's
+            # six.
+            - name: WAIT_TIMEOUT
+              value: "14400"
+          ports:
+            - containerPort: 8081
+              name: llamacpp
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 720
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            # Host RAM is this app's binding resource, not VRAM. The memcg holds
+            # the experts (45.3 GiB at IQ3_XXS) as mmap'd page cache, the n-gram
+            # table's working set on top, and the engine's own anonymous memory
+            # (prompt cache, host compute buffers). Page cache is reclaimable,
+            # so at the limit the kernel drops pages and llama.cpp re-reads them
+            # from NVMe rather than being OOMKilled; that shows up as a slow
+            # decode, not a crash. 56Gi is about what the node has free with
+            # HyperQwen stopped (93 GB total). Measure memory.current and
+            # memory.stat's file/anon before moving it.
+            limits:
+              cpu: "16"
+              memory: 56Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+            requests:
+              cpu: "2"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "23552"
+          volumeMounts:
+            - mountPath: /cache/hf/hub
+              name: hf-cache
+              readOnly: true
+            - mountPath: /run/llm-init
+              name: run-state
+              readOnly: true
+            - mountPath: /llm-init/wrappers
+              name: wrapper
+              readOnly: true
+            - mountPath: /cuda-cache
+              name: cuda-cache
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface
+            type: DirectoryOrCreate
+        - name: run-state
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/llm-init-run/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: cuda-cache
+          hostPath:
+            path: /olares/rootfs/Common/huggingface/cuda-cache/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: wrapper
+          configMap:
+            name: flashnext-wrapper
+            defaultMode: 365
+      restartPolicy: Always
+      runtimeClassName: nvidia
+      schedulerName: hami-scheduler
+---
+# Entrance service: OlaresManifest entrances[].host resolves this name, and
+# entrance readiness probes it, so the install completes on llm-init's
+# readiness rather than the engine's.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llminit
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+  type: ClusterIP
+---
+# llm-init with ENGINE_KIND=llamacpp proxies to http://llamacpp:$LLAMACPP_PORT,
+# so the engine must be reachable under exactly this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamacpp
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llamacpp
+spec:
+  selector:
+    io.kompose.service: llamacpp
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP
+---
+# The shared entrance the manifest declares, and what the Router app probes
+# (`/api/model-spec`, `/api/progress`, `/v1/models` - llm-init's API). Port 80
+# because the manifest carries port 0, which is what the market apps do.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    io.kompose.service: llm-init
+spec:
+  selector:
+    io.kompose.service: llm-init
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8090
+  type: ClusterIP

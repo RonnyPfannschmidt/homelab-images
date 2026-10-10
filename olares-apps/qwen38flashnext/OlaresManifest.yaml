@@ -1,0 +1,166 @@
+---
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  llminit: 1
+  qwen38flashnext: 1
+metadata:
+  name: qwen38flashnext
+  # Reuses the qwen3.6 app's icon asset on aamsellem's external host, as the
+  # other Qwen3.8 charts do: this chart publishes no icons.
+  icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+  description: "Qwen3.8-Flash-Next 125B MoE on llama.cpp — UD-IQ3_XXS, experts in host RAM behind a GPU expert cache, n-gram table paged from NVMe, image input @ 128K"
+  title: Qwen38 Flash-Next
+  version: 1.0.0
+  # "AI Agents" is what makes openwebui-sync pick the app up as a model
+  # provider: the name starts with the model, not an engine prefix.
+  categories:
+    - Vision
+    - AI Agents
+# The engine is reached through llm-init's port. `authLevel: internal` means
+# in-cluster callers get the API and everything else a 302 to Authelia.
+entrances:
+  - name: qwen38flashnext
+    port: 8090
+    host: llminit
+    title: Qwen38 Flash-Next
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    openMethod: window
+    authLevel: internal
+# What the Router app (Olares' LLM gateway) looks for, and the only thing it
+# looks for: an app without a shared entrance is registered with the address
+# `model-application-address-unknown.invalid` and never listed.
+sharedEntrances:
+  - name: qwen38flashnext
+    host: sharedentrances-api
+    port: 0
+    title: Qwen38 Flash-Next
+    icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
+    authLevel: internal
+    invisible: true
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 1.0.0
+  upgradeDescription: |
+    v1.0.0: initial release - Qwen3.8-Flash-Next on stock llama.cpp, sized for this card used alone.
+
+    **It needs the GPU to itself.** It reserves the same 23552 MiB as HyperQwen, so the two cannot run at once: stop HyperQwen first.
+
+    **Host RAM is the constraint, not VRAM.** The model is 76.3 GiB at UD-IQ3_XXS: 4.2 GiB of dense weights on the GPU, 45.3 GiB of routed experts in host RAM, and a 26.8 GiB n-gram table that stays on disk and is paged in a few rows per token. The engine runs with mmap on - unlike the other llama.cpp charts here - so the experts are page cache, and the 56Gi limit makes the kernel drop and re-read pages rather than OOMKill the engine.
+
+    **Decode runs from a GPU expert cache** (`--moe-cache-mib`, merged upstream 2026-10-07): 8 GiB to start. Upstream measured 25.0 -> 40.7 tok/s on a 24 GB RTX 4090 with an 11 GiB cache. Nothing has been measured on this box.
+
+    No speculative decoding: the MTP draft head is not in mainline llama.cpp yet. The first start downloads ~77 GiB.
+  fullDescription: |
+    Qwen3.8-Flash-Next on Olares One: a 125B mixture-of-experts model (512
+    experts, top-10, 6B active per token) plus a 51B n-gram embedding table,
+    served by stock llama.cpp on one 24 GB card.
+    RTX 5090M (24 GB GDDR7, sm_120 Blackwell) + 96 GB DDR5 + Core Ultra 9 275HX.
+
+    Stack:
+      - Image: ghcr.io/ggml-org/llama.cpp:server-cuda13-b11515
+      - Weights: unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ3_XXS (3 shards, 76.3 GiB)
+      - Vision projector: unsloth mmproj-F16.gguf (0.84 GiB)
+      - Placement: dense layers on the GPU; routed experts in host RAM (-cmoe)
+        with an 8 GiB GPU expert cache; n-gram table on the CPU, mmap'd
+      - KV cache: q8_0
+      - Context: 128K
+
+    It needs the GPU to itself: stop HyperQwen before starting it.
+
+    Not benchmarked on this box. For scale, upstream measured the expert cache
+    at 40.7 tok/s on a desktop RTX 4090 (Q4_0, 11 GiB cache).
+  developer: ronnypfannschmidt
+  website: https://github.com/ggml-org/llama.cpp
+  sourceCode: https://github.com/ggml-org/llama.cpp
+  submitter: ronnypfannschmidt
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/ggml-org/llama.cpp/blob/master/LICENSE
+
+  accelerator:
+    - mode: nvidia
+      # EVERY figure here is a SUM ACROSS CONTAINERS, requests as well as
+      # limits; the chart validator rejects the package when one is short.
+      # Engine 16 / 2 / 16Gi / 56Gi plus llm-init 1 / 200m / 256Mi / 2Gi.
+      requiredCpu: "3"
+      limitedCpu: "18"
+      requiredMemory: 17Gi
+      limitedMemory: 60Gi
+      # ~77 GiB of shards and projector in the shared HF cache.
+      requiredDisk: 80Gi
+      limitedDisk: 100Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+
+  supportArch:
+    - amd64
+permission:
+  appData: true
+  # The chart reads and writes the shared HuggingFace cache under
+  # /olares/rootfs/Common/huggingface.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `qwen38flashnext-shared` and force-enables cross-namespace
+  # access, so other apps reach the engine at
+  # http://llminit.qwen38flashnext-shared:8090/v1. Also makes the install
+  # admin-only, hence spec.onlyAdmin above.
+  shared: true
+  LLMGatewaySupported: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.6-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN
+  # The model declaration, in the shape the market llama.cpp/vLLM apps use.
+  # The Router app builds its model entry from these manifest defaults. Not
+  # editable: the engine loads the GGUF paths from values.yaml, not from
+  # MODEL_SOURCE. testing/test_charts_render.py holds these equal to the
+  # template's own fallbacks.
+  - envName: MODEL_SOURCE
+    default: "hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include mmproj-F16.gguf"
+    type: string
+    required: true
+    description: >-
+      The three UD-IQ3_XXS shards and the vision projector, fetched by llm-init into the shared hub cache.
+    regex: "^hf://"
+  - envName: MODEL_NAME
+    default: "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS"
+    type: string
+    required: true
+    description: >-
+      The served model id, also the engine's --alias; llm-init waits for exactly this id on the engine's /v1/models.
+  - envName: MODEL_MODE
+    default: chat
+    type: string
+    required: true
+    options:
+      - title: Chat
+        value: chat
+  - envName: MODEL_SUPPORTS
+    default: "thinking,tools,vision"
+    type: string
+    required: true
+    description: The model capabilities.
+    options:
+      - title: Vision
+        value: vision
+      - title: Tools
+        value: tools
+      - title: Thinking
+        value: thinking
+      - title: None
+        value: none
+    multiSelect: true
+    splitter: ","
