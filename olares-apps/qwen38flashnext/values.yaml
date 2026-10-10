@@ -1,0 +1,83 @@
+admin: ""
+bfl:
+  username: ""
+workloads:
+  llminit:
+    replicaCount: 1
+  qwen38flashnext:
+    replicaCount: 1
+userspace:
+  appData: ""
+  appCache: ""
+  userData: ""
+olaresEnv: {}
+model:
+  # Qwen3.8-Flash-Next is a 125B MoE (512 experts, top-10, 6B active) plus a
+  # separate 51B n-gram embedding table (`per_layer_token_embd`). The weights
+  # do not fit a 24 GB card, so they are split three ways, measured from the
+  # GGUF headers on 2026-10-10:
+  #
+  #                     UD-Q2_K_XL  UD-IQ3_XXS  UD-Q3_K_XL   where
+  #     dense             3.70        4.21        4.98       GPU
+  #     n-gram table     26.82       26.82       26.82       mmap, paged from NVMe
+  #     routed experts   42.92       45.29       51.99       host RAM + GPU cache
+  #     ---------------------------------------------- GiB
+  #     total            73.44       76.32       83.80
+  #
+  # The n-gram table is IQ4_NL in every quant: the quant name moves only the
+  # experts. IQ3_XXS buys 2.4 GiB more expert precision than Q2_K_XL; Q3_K_XL
+  # wants 52 GiB of experts against ~53 GiB the node has free with HyperQwen
+  # stopped, which is no margin.
+  #
+  # `files` lists every shard. llama-server is given the first and finds the
+  # others beside it, which holds in the HF cache because a snapshot keeps the
+  # repo's directory layout. The wrapper waits for all of them, not only the
+  # first, since llm-init fetches them as separate sources.
+  target:
+    repo: unsloth/Qwen3.8-Flash-Next-GGUF
+    quant: UD-IQ3_XXS
+    files:
+      - UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf
+      - UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf
+      - UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00003.gguf
+  # Image input through the Qwen3-VL ViT path the model support PR reused.
+  # Leave `repo` empty to serve text-only, which frees 0.84 GiB of VRAM for
+  # the expert cache and lifts the 2048 batch floor (see the wrapper).
+  mmproj:
+    repo: unsloth/Qwen3.8-Flash-Next-GGUF
+    file: mmproj-F16.gguf
+  # No speculative decoding: the MTP head unsloth ships needs the NextN draft
+  # path in ggml-org/llama.cpp#27836, which is not merged.
+  #
+  # 128K to start. Nobody has published the KV cost per token for this
+  # architecture (gated DeltaNet plus QSA sparse attention); a 24 GB RTX 3090
+  # report held 262144 at q8_0 beside seven layers of experts. Raise it, or
+  # the expert cache, against a measured nvidia-smi figure only.
+  ctxSize: "131072"
+  cacheType: q8_0
+  threads: "16"
+  # GPU cache for the routed experts kept in host RAM, in MiB
+  # (--moe-cache-mib, ggml-org/llama.cpp#29887, merged 2026-10-07). Matrix
+  # multiplications over host experts run on the GPU from an LRU cache and only
+  # the misses cross PCIe. It applies to batches of 32 tokens or fewer, i.e.
+  # decode; prompt processing takes the ordinary offload path.
+  #
+  # Upstream measured, on Q4_0 with no MTP, `-cmoe` plus a cache:
+  #     RTX 4090 24 GB   25.0 -> 40.7 tok/s at 11000 MiB (77% hit rate)
+  #     RTX 5090 32 GB   30.8 -> 67.8 tok/s at 19000 MiB (89% hit rate)
+  # 8192 is a start that leaves room for the rest of the budget on 23 GiB:
+  #     dense 4.21 + mmproj 0.84 + cache 8.00 = 13.05 GiB before KV and
+  #     compute buffers, neither of which is known for this model yet.
+  moeCacheMiB: "8192"
+  # HOST RAM budget for llama.cpp's server-side prompt cache, in MiB
+  # (--cache-ram). The upstream default of 8192 is real growth, and on this
+  # chart host RAM is the scarce resource: every MiB here is a MiB the experts
+  # cannot keep resident.
+  cacheRamMiB: "2048"
+  # Thinking-mode sampling from the unsloth model card (temperature 1.0,
+  # top_p 0.95, top_k 20, min_p 0.0).
+  sampling:
+    temp: "1.0"
+    topP: "0.95"
+    topK: "20"
+    minP: "0.0"
