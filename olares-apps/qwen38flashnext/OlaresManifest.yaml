@@ -12,7 +12,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
   description: "Qwen3.8-Flash-Next 125B MoE on llama.cpp — UD-IQ3_XXS, experts in host RAM behind a GPU expert cache, n-gram table paged from NVMe, image input @ 128K"
   title: Qwen38 Flash-Next
-  version: 1.0.0
+  version: 1.0.1
   # "AI Agents" is what makes openwebui-sync pick the app up as a model
   # provider: the name starts with the model, not an engine prefix.
   categories:
@@ -42,7 +42,7 @@ sharedEntrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.0.0
+  versionName: 1.0.1
   upgradeDescription: |
     v1.0.0: initial release - Qwen3.8-Flash-Next on stock llama.cpp, sized for this card used alone.
 

@@ -68,7 +68,7 @@ model:
   # 8192 is a start that leaves room for the rest of the budget on 23 GiB:
   #     dense 4.21 + mmproj 0.84 + cache 8.00 = 13.05 GiB before KV and
   #     compute buffers, neither of which is known for this model yet.
-  moeCacheMiB: "8192"
+  moeCacheMiB: "13312"
   # HOST RAM budget for llama.cpp's server-side prompt cache, in MiB
   # (--cache-ram). The upstream default of 8192 is real growth, and on this
   # chart host RAM is the scarce resource: every MiB here is a MiB the experts
