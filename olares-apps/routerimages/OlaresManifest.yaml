@@ -1,0 +1,92 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  routerimages: 1
+metadata:
+  name: routerimages
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  description: A synchronous OpenAI image API in front of Router, so Open WebUI can generate images with FlowStudio workflows
+  title: Router Images
+  version: 0.1.0
+  categories:
+    - AI Agents
+# An entrance because every app needs one; there is nothing to open. Callers
+# use the Service, http://routerimages.routerimages-shared:8080/v1, which
+# `options.shared` makes reachable from other namespaces.
+entrances:
+  - name: routerimages
+    port: 8080
+    host: routerimages
+    title: Router Images
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    openMethod: window
+    authLevel: internal
+    invisible: true
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 0.1.0
+  upgradeDescription: |
+    v0.1.0: initial release.
+  fullDescription: |
+    Router serves FlowStudio image workflows only asynchronously: a plain
+    `POST /v1/images/generations` is refused with
+    `image_generation_async_required`, the prompt has to sit under
+    `flowstudio.params` by the workflow's own field name, and the picture is
+    collected from a `content_url` once the generation completes.
+
+    This app answers the ordinary, synchronous OpenAI request - the one Open
+    WebUI's `openai` image engine sends - by doing that on the caller's behalf
+    and returning `data[].b64_json`. A model that is not a FlowStudio workflow
+    is passed to Router unchanged.
+
+    Calls reach Router as this app, through its shared entrance, so Router's
+    usage log names this app rather than the original caller.
+
+    Set `ROUTER_URL` to Router's shared entrance as the apps on the box reach
+    it, e.g. `http://<hash>.shared.olares.com/v1`.
+  developer: ronnypfannschmidt
+  submitter: ronnypfannschmidt
+  website: https://github.com/RonnyPfannschmidt/homelab-images
+  sourceCode: https://github.com/RonnyPfannschmidt/homelab-images/tree/main/apps/routerimages
+  locale:
+    - en-US
+  requiredCpu: 50m
+  limitedCpu: 500m
+  requiredMemory: 64Mi
+  limitedMemory: 256Mi
+  requiredDisk: 16Mi
+  limitedDisk: 64Mi
+  supportArch:
+    - amd64
+permission:
+  appData: false
+options:
+  apiTimeout: 0
+  # Deploys into `routerimages-shared` and opens it to other namespaces, which
+  # is how Open WebUI reaches the Service.
+  shared: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system
+envs:
+  - envName: ROUTER_URL
+    type: string
+    required: true
+    editable: true
+    applyOnChange: true
+    regex: "^https?://"
+    description: >-
+      Router's OpenAI base as apps on this box reach it, e.g. http://<hash>.shared.olares.com/v1.
+  - envName: GENERATION_TIMEOUT
+    type: string
+    default: "600"
+    required: false
+    editable: true
+    applyOnChange: true
+    regex: "^[0-9]+$"
+    description: >-
+      Seconds to wait for one generation. 600 is FlowStudio's own budget for starting an engine.

@@ -1,0 +1,14 @@
+# The synchronous OpenAI image facade over Olares' Router; see routerimages.py.
+#
+# Standard library only, so the base is the whole dependency set. Pinned by
+# the multi-arch index digest; Renovate moves it.
+FROM docker.io/library/python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+
+COPY apps/routerimages/routerimages.py /app/routerimages.py
+
+# Not root: Olares' admission policy refuses a root container from an image
+# outside its allowlist, and nothing here needs it.
+USER 65534:65534
+EXPOSE 8080
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "-I", "/app/routerimages.py"]

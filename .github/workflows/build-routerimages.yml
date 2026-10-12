@@ -1,0 +1,162 @@
+# Build the routerimages app image and hold its chart's pin to it.
+#
+# Not a matrix entry in build-apps.yml: that workflow's smoke tests are
+# Nextcloud's, its images are multi-arch, and its build timestamp is HEAD's.
+# This one is amd64 only - the one box that runs Olares - and its whole point
+# is that the digest is known before the push, so the chart can pin it in the
+# same pull request as the code.
+#
+# That rests on two things:
+#
+# - The build is a function of apps/routerimages/ alone. The source date and
+#   the revision label come from the last commit that touched that directory,
+#   not from HEAD, so the commit that writes the pin into values.yaml does not
+#   move the image it pins. Hence fetch-depth 0 and the pull request head rather
+#   than GitHub's synthetic merge commit, which would be the "last commit" of
+#   everything.
+# - Two builds of that tree are bit-identical, checked here by building twice.
+#
+# A pull request pushes to a throwaway registry on the runner to learn the
+# digest a real push would produce - the manifest is written by podman, not by
+# the registry - and fails if values.yaml pins anything else. On main the real
+# push is checked against the same pin before anything is signed.
+
+name: routerimages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/routerimages/**
+      - olares-apps/routerimages/values.yaml
+      - .github/workflows/build-routerimages.yml
+  pull_request:
+    paths:
+      - apps/routerimages/**
+      - olares-apps/routerimages/values.yaml
+      - .github/workflows/build-routerimages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routerimages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build, reproduce, check the pin
+    # podman 5 for --source-date-epoch/--rewrite-timestamp; see build-apps.yml.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Work out the source commit and the pin
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          src=$(git log -1 --format=%H -- apps/routerimages)
+          {
+            echo "image=ghcr.io/$owner/routerimages"
+            echo "src=$src"
+            echo "short=$(git rev-parse --short "$src")"
+            echo "sde=$(git log -1 --format=%ct "$src")"
+            echo "pinned=$(sed -n 's/^image: .*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' olares-apps/routerimages/values.yaml)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build twice
+        run: |
+          for tag in a b; do
+            podman build --pull=missing --no-cache \
+              --platform linux/amd64 \
+              --source-date-epoch "${{ steps.meta.outputs.sde }}" \
+              --rewrite-timestamp \
+              --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+              --label org.opencontainers.image.revision=${{ steps.meta.outputs.src }} \
+              -t "localhost/routerimages:$tag" \
+              -f apps/routerimages/Containerfile \
+              .
+          done
+
+      - name: Smoke test
+        run: |
+          podman run -d --name smoke -p 8080:8080 -e ROUTER_URL=http://127.0.0.1:9/v1 localhost/routerimages:a
+          for _ in $(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 0.5; done
+          curl -fsS http://127.0.0.1:8080/healthz
+          podman rm -f smoke
+
+      # The digest a push produces, learned without pushing anywhere real.
+      - name: Push both builds to a throwaway registry
+        id: local
+        run: |
+          podman run -d --name registry -p 5000:5000 \
+            docker.io/library/registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+          for _ in $(seq 20); do curl -fsS http://127.0.0.1:5000/v2/ && break; sleep 0.5; done
+          for tag in a b; do
+            podman push --tls-verify=false --digestfile "/tmp/digest-$tag" \
+              "localhost/routerimages:$tag" "docker://localhost:5000/routerimages:$tag"
+          done
+          echo "a=$(cat /tmp/digest-a)" >> "$GITHUB_OUTPUT"
+          echo "b=$(cat /tmp/digest-b)" >> "$GITHUB_OUTPUT"
+
+      - name: The two builds are identical
+        run: |
+          echo "first  ${{ steps.local.outputs.a }}"
+          echo "second ${{ steps.local.outputs.b }}"
+          test "${{ steps.local.outputs.a }}" = "${{ steps.local.outputs.b }}"
+
+      - name: values.yaml pins this build
+        run: |
+          built="${{ steps.local.outputs.a }}"
+          pinned="${{ steps.meta.outputs.pinned }}"
+          if [ "$built" != "$pinned" ]; then
+            echo "::error file=olares-apps/routerimages/values.yaml::pins ${pinned:-nothing}, the build is $built; set image: ${{ steps.meta.outputs.image }}@$built"
+            exit 1
+          fi
+
+      - name: Log in to ghcr.io
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push, and check it landed as pinned
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          image="${{ steps.meta.outputs.image }}"
+          podman push --digestfile /tmp/digest localhost/routerimages:a "docker://$image:sha-${{ steps.meta.outputs.short }}"
+          test "$(cat /tmp/digest)" = "${{ steps.meta.outputs.pinned }}"
+          podman push localhost/routerimages:a "docker://$image:latest"
+
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # The same two signatures as the other images: keyless for provenance,
+      # keyed because that is what policy.json can require.
+      - name: Sign (keyless)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          cosign sign --yes "${{ steps.meta.outputs.image }}@${{ steps.meta.outputs.pinned }}"
+
+      - name: Sign (keyed)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.COSIGN_PRIVATE_KEY != ''
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${{ steps.meta.outputs.image }}@${{ steps.meta.outputs.pinned }}"

@@ -1,0 +1,14 @@
+# Replica lever. Olares drives it (the manifest's `workloadReplicas`), and the
+# CI harness zeroes it so a render test never starts a pod.
+workloads:
+  routerimages:
+    replicaCount: 1
+
+# Pinned by digest, the amd64 image .github/workflows/build-routerimages.yml
+# builds from apps/routerimages/. That workflow rebuilds it on every pull
+# request and fails when this digest is not what the build produces, so the
+# pin can sit in the same change as the code it pins.
+image: ghcr.io/ronnypfannschmidt/routerimages@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# Olares fills this from the manifest's envs at install time.
+olaresEnv: {}
