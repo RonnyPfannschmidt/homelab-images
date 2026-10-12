@@ -131,8 +131,15 @@ profile:
   # serving something subtly wrong, which is the right default — but it also
   # means one check that does not survive HAMi's interception turns into a
   # crashloop with no way out short of editing the chart. Exposed so "0" is a
-  # helm upgrade. Turn it off only with the failing line in hand.
-  verify: "1"
+  # helm upgrade.
+  #
+  # Off since 1.3.5: the engine binds 0.0.0.0 through HOST with no API key
+  # (llm-init cannot send one), and verify.sh FAILs exactly that combination.
+  # Of the ~24 s it took per boot, ~20 s re-proved what the image build's
+  # `verify.sh --install` already proved; the checks lost are the model
+  # volume's (zero points, duplicate tensors, tokenizers, drafter). See
+  # docs/work-in-progress/olares/llm-startup.md in the nixos repository.
+  verify: "0"
   # The entrypoint's idempotent model preparation. "1" on every start: it is a
   # state check measured in seconds once the model is there, and it is what
   # makes a wiped models volume heal itself instead of crashlooping. "0" only

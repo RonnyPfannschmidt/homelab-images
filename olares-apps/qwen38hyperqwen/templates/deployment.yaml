@@ -66,6 +66,11 @@ data:
   VERIFY: "{{ .Values.profile.verify }}"
   PREPARE: "{{ .Values.profile.prepare }}"
   PORT: "18020"
+  # Since syv-ai/HyperQwen#237 a launcher with no API key binds 127.0.0.1
+  # unless it finds /.dockerenv, which a Kubernetes pod does not have; llm-init
+  # reaches the engine from its own pod, and has no way to send a key. HOST
+  # makes the bind explicit, and is why verify must be off (see values.yaml).
+  HOST: "0.0.0.0"
 
 ---
 # llm-init: the app's entrance, and the reason the install can finish.
@@ -282,9 +287,9 @@ spec:
           # publishes no semver tags, only `latest` and one immutable
           # `sha-<7>` per commit on main, which is what this is.
           #
-          # sha-73fd65d = syv-ai/HyperQwen@73fd65d549f11a7c692492f38a398baf3592696c
-          # (2026-09-23, vLLM 0.29.0), manifest digest
-          # sha256:0c14002d5776b6d8e1cc098dc66644196c6731526af3cc49d84a33558a0f4fcc.
+          # sha-95ee3b6 = syv-ai/HyperQwen@95ee3b64b0df7014ee2626529524d6b99c3dcdd1
+          # (2026-10-11, vLLM 0.31.0), manifest digest
+          # sha256:f5bf743d5d6f0455ec5d5055aef659aadbf29ffaf190c8516e29e835bc8672b4.
           # The digest is recorded rather than appended as `@sha256:`: no
           # Market chart pins an image that way, and Olares pre-pulls images
           # itself, so the tag is the form known to survive that path.
@@ -292,7 +297,7 @@ spec:
           # A tag also flips the default pull policy from Always (what
           # `latest` got) to IfNotPresent, so a restart no longer re-checks
           # the 9.5 GB image.
-          image: "ghcr.io/syv-ai/hyperqwen:sha-73fd65d"
+          image: "ghcr.io/syv-ai/hyperqwen:sha-95ee3b6"
           # The image ENTRYPOINT is `bash docker/entrypoint.sh`; the argument
           # selects what runs. `single`/`batch` both run the idempotent
           # prepare first (a state check measured in seconds once the model is
