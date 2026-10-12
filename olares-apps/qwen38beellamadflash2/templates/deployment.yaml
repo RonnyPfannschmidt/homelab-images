@@ -176,15 +176,27 @@ data:
         # --cache-ram: HOST RAM, not VRAM -- llama.cpp's server-side prompt cache
         # for restorable prefixes (PR #16391). Its default is 8192 MiB, and it
         # really does grow to fill that: three OOMKills on 2026-09-02 all landed
-        # at 7.7-8.7 GB anon-rss. Against a container limit shared with ~19 GiB
-        # of page cache (the weights, read in by --no-mmap) that is what tips the
-        # memcg over. Bounded here; see values.yaml model.cacheRamMiB.
+        # at 7.7-8.7 GB anon-rss. Against a container limit then shared with
+        # ~19 GiB of page cache (the weights, read in by --no-mmap) that is what
+        # tipped the memcg over. Bounded here; see values.yaml model.cacheRamMiB.
         #
         # --mlock is deliberately ABSENT. The container's RLIMIT_MEMLOCK is far
         # below the weights, so every boot logged `failed to mlock <N>-byte
-        # buffer: Cannot allocate memory` and pinned nothing. --no-mmap already
-        # keeps the weights resident; passing --mlock only bought log noise and
-        # a failed syscall per buffer.
+        # buffer: Cannot allocate memory` and pinned nothing. The weights live on
+        # the GPU anyway; passing --mlock only bought log noise and a failed
+        # syscall per buffer.
+        #
+        # --load-mode dio: read the weights with direct I/O, past the page
+        # cache. Every layer is on the GPU, so nothing reads them again after
+        # the load, and the page cache a buffered read leaves behind is charged
+        # to this container's memcg: --no-mmap left 19.4 GiB of it there.
+        # Measured on the Olares One 2026-10-11, time to listening and memcg
+        # peak at boot ("warm" = weights still in page cache from the last
+        # start; dio never fills it, so its warm start is a cold one):
+        #
+        #     --no-mmap   cold 11.4 s, 20.0 GiB   warm 5.4 s
+        #     mmap        cold 12.1 s, 19.6 GiB   warm 4.4 s
+        #     dio         cold  6.3 s,  2.4 GiB   warm 6.3 s
         exec "$LLAMA_SERVER" \
             --model "$TARGET_PATH" \
             $MMPROJ_ARGS \
@@ -200,7 +212,7 @@ data:
             --parallel 1 --kv-unified \
             --flash-attn on --jinja \
             --chat-template-file /chat-template/qwen38_chat_template.jinja \
-            --no-mmap \
+            --load-mode dio \
             --metrics \
             -fit off \
             $SPEC_ARGS \
@@ -461,7 +473,10 @@ spec:
             # reclaim OOMs instead, which is exactly what the nvidia UVM
             # bottom-half (GFP_NOMEMALLOC) did on 2026-09-02. Matches the
             # limitedMemory this app's OlaresManifest already declares; the node
-            # has 93 GB. See docs/olares-qwen38beellama.md.
+            # has 93 GB. See docs/olares-qwen38beellama.md. Since --load-mode
+            # dio the weights' page cache no longer lands here (2.4 GiB peak at
+            # boot, measured 2026-10-11); the limit stays until a measured
+            # memory.current under load says it can come down.
             limits:
               cpu: "6"
               memory: 40Gi
