@@ -8,7 +8,7 @@ workloads:
 # builds from apps/routerimages/. That workflow rebuilds it on every pull
 # request and fails when this digest is not what the build produces, so the
 # pin can sit in the same change as the code it pins.
-image: ghcr.io/ronnypfannschmidt/routerimages@sha256:0000000000000000000000000000000000000000000000000000000000000000
+image: ghcr.io/ronnypfannschmidt/routerimages@sha256:cfba159b005e7b210c9975b57bf4f04943dd245ef4713c5be72539c59f9203aa
 
 # Olares fills this from the manifest's envs at install time.
 olaresEnv: {}
