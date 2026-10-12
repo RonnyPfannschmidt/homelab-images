@@ -11,7 +11,7 @@ metadata:
   title: FichtenDorf
   description: Modded Minecraft Fabric server with Geyser — Java and Bedrock clients on one world.
   icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
-  version: 0.3.0
+  version: 0.3.1
   categories:
     - Fun
   tags:
@@ -131,6 +131,8 @@ spec:
     Overlay for this app. From elsewhere: join over Tailscale at
     <olares-id>.olares.com on the same ports.
   upgradeDescription: |
+    v0.3.1: the world lives on the appData hostPath again, the one 0.2.x used. 0.3.0 put it on a PVC the subchart provisioned, which an uninstall deletes with the namespace, so moving the app between market sources would have started a new world each time. The chart now binds a PersistentVolume (`Retain`) on `<appData>/data` itself and hands the subchart that claim. 0.2.x's world comes back; nobody had played in it.
+
     v0.3.0: stop hand-writing the Deployment. The server, its Service and its
     PVC now come from itzg's own Helm chart (`itzg/minecraft` 5.2.0, by the
     author of the `itzg/minecraft-server` image this has always run), vendored

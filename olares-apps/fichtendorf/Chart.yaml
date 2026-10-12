@@ -2,7 +2,7 @@ apiVersion: v2
 name: fichtendorf
 description: Modded Minecraft Fabric server with Geyser — Java and Bedrock clients on one world.
 type: application
-version: 0.3.0
+version: 0.3.1
 appVersion: "26.2"
 
 # The server Deployment and Service come from itzg's own chart, by the same
