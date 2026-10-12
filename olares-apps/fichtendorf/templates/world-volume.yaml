@@ -1,0 +1,44 @@
+# The world, on the appData hostPath, handed to the subchart as an existing
+# claim.
+#
+# The subchart cannot name that path - Olares injects `userspace.appData` at
+# the top level and Helm passes only `global.*` down - but this chart can, so
+# it binds a PersistentVolume there itself. The point is the uninstall: a PVC
+# the subchart provisions lives and dies with the app's namespace, and every
+# reinstall or move between market sources would start a new world. Olares
+# keeps appData across an uninstall unless told to delete it.
+#
+# The path is the one 0.2.x mounted, so its world is the one this serves.
+# A hostPath PV gets no `fsGroup` chown: the directory has to be owned by
+# 1000, which the 0.2.x init container already did on this box.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Release.Namespace }}-world
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ .Release.Namespace }}
+    name: fichtendorf-world
+  hostPath:
+    type: DirectoryOrCreate
+    path: '{{ .Values.userspace.appData }}/data'
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fichtendorf-world
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: {{ .Release.Namespace }}-world
+  resources:
+    requests:
+      storage: 50Gi

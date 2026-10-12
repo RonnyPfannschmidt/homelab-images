@@ -62,24 +62,13 @@ minecraft:
   # same region files corrupts the world. Recreate, never RollingUpdate.
   strategyType: Recreate
 
-  # The world, on a PVC rather than the `.Values.userspace.appData` hostPath the
-  # hand-written Deployment used.
-  #
-  # Not a preference — a subchart cannot see it. Olares injects `userspace.appData`
-  # as a *top-level* value, and Helm passes only `global.*` down into a subchart,
-  # so no amount of templating in the upstream chart can reach it. (Verified:
-  # a subchart `tpl` renders the parent's top-level value as the empty string.)
-  # A PVC is what the upstream chart does natively, and it is also where the
-  # k3s + Flux cluster is going anyway.
-  #
-  # The existing FichtenDorf world is NOT carried across. That is acceptable
-  # only because nobody has played in it.
+  # The world: templates/world-volume.yaml binds a PersistentVolume on the
+  # appData hostPath and the subchart mounts that claim. A PVC of the
+  # subchart's own would be deleted with the namespace on every uninstall.
   persistence:
     dataDir:
       enabled: true
-      Size: 50Gi
-      accessModes:
-        - ReadWriteOnce
+      existingClaim: fichtendorf-world
 
   # The overlay gateway attaches its LAN interface on the control-plane node
   # only; a pod scheduled anywhere else is reachable in-cluster but invisible
@@ -317,3 +306,7 @@ minecraft:
         - name: packwiz
           mountPath: /packwiz
           readOnly: true
+
+# Olares injects this at install time; the default keeps `helm template` working.
+userspace:
+  appData: ""

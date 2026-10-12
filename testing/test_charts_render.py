@@ -52,6 +52,14 @@ def test_no_workload_would_start_a_pod(chart: Path, ci_values: Path) -> None:
             )
 
 
+#: Cluster-scoped kinds a chart renders deliberately, with the reason beside it.
+CLUSTER_SCOPED_ON_PURPOSE: dict[str, frozenset[str]] = {
+    # The world's hostPath volume: it outlives the namespace, which is the
+    # whole reason it is there. templates/world-volume.yaml.
+    "fichtendorf": frozenset({"PersistentVolume"}),
+}
+
+
 def test_every_object_is_namespaced_or_cluster_scoped_on_purpose(
     chart: Path, ci_values: Path
 ) -> None:
@@ -73,6 +81,7 @@ def test_every_object_is_namespaced_or_cluster_scoped_on_purpose(
         f"{o['kind']}/{o.get('metadata', {}).get('name')}"
         for o in render(chart, ci_values)
         if o.get("kind") in cluster_scoped
+        and o.get("kind") not in CLUSTER_SCOPED_ON_PURPOSE.get(chart.name, ())
     ]
     assert not found, f"{chart.name} renders cluster-scoped objects: {found}"
 
