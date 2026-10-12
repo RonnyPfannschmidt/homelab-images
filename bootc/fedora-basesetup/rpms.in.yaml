@@ -1,9 +1,8 @@
 # Input to rpm-lockfile-prototype; rpms.lock.yaml beside it is the output.
 #
-# Regenerate with, from the repository root:
-#   rpm-lockfile-prototype --image <the FROM digest in Containerfile> \
-#       --outfile=bootc/fedora-basesetup/rpms.lock.yaml \
-#       bootc/fedora-basesetup/rpms.in.yaml
+# Regenerate with bootc/fedora-basesetup/relock.py, after editing this file and
+# after every base digest bump - the lock is resolved against the base's rpmdb
+# and records which base that was. pre-commit fails when the two disagree.
 #
 # updates-archive is not optional. releases/ is frozen and never moves, but
 # updates/ carries only the current build of each package - and the base image

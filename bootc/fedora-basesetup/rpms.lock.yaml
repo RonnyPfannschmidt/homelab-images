@@ -1,6 +1,7 @@
 ---
 lockfileVersion: 1
 lockfileVendor: redhat
+baseImage: quay.io/fedora/fedora-silverblue:44@sha256:f092916f372159feeccd91f8755cab1e5e869a245d4f7b00bf4cecd10c2a054a
 arches:
 - arch: x86_64
   packages:
@@ -277,13 +278,6 @@ arches:
     name: perl-parent
     evr: 1:0.244-521.fc44
     sourcerpm: perl-parent-0.244-521.fc44.src.rpm
-  - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/perl-podlators-6.0.2-521.fc44.noarch.rpm
-    repoid: fedora
-    size: 131562
-    checksum: sha256:3b65193fa8e9e2ba12f19ac4470100d7f7f505f62fbd7520ed3dd4c2a9ec6edc
-    name: perl-podlators
-    evr: 1:6.0.2-521.fc44
-    sourcerpm: perl-podlators-6.0.2-521.fc44.src.rpm
   - url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/Packages/p/pwgen-2.08-18.fc44.x86_64.rpm
     repoid: fedora
     size: 30459
@@ -326,27 +320,27 @@ arches:
     name: the_silver_searcher
     evr: 2.2.0^2020704.5a1c8d8-15.fc44
     sourcerpm: the_silver_searcher-2.2.0^2020704.5a1c8d8-15.fc44.src.rpm
-  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-2.55.0-1.fc44.x86_64.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-2.56.0-1.fc44.x86_64.rpm
     repoid: updates-archive
-    size: 42124
-    checksum: sha256:e6dc583ab2a545dea11573ff604df0fadcc0688e07d867591ec1b6ed14b94e0b
+    size: 41830
+    checksum: sha256:32e8e5edae032a352441e056b5141a280f20710423a2e70e90ca88ea4ec54469
     name: git
-    evr: 2.55.0-1.fc44
-    sourcerpm: git-2.55.0-1.fc44.src.rpm
-  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-gui-2.55.0-1.fc44.noarch.rpm
+    evr: 2.56.0-1.fc44
+    sourcerpm: git-2.56.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/git-gui-2.56.0-1.fc44.noarch.rpm
     repoid: updates-archive
-    size: 259919
-    checksum: sha256:0dfa41962c06aaca826ff49228d3e81560fcd266981e8b5e663c05a86785546e
+    size: 259755
+    checksum: sha256:f7f211e1b6a3d7e4fada2d05407f5e269805cc21d0520213225d11e38696c906
     name: git-gui
-    evr: 2.55.0-1.fc44
-    sourcerpm: git-2.55.0-1.fc44.src.rpm
-  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/gitk-2.55.0-1.fc44.noarch.rpm
+    evr: 2.56.0-1.fc44
+    sourcerpm: git-2.56.0-1.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/gitk-2.56.0-1.fc44.noarch.rpm
     repoid: updates-archive
-    size: 169938
-    checksum: sha256:06363d02043979820ebed6da523252a78ba44e0b5006dee82ba19b1dff2ed669
+    size: 171599
+    checksum: sha256:410ed1216fc2b344362220810c3b52386fd127e2e9896cd6724ce0e8287a85f8
     name: gitk
-    evr: 2.55.0-1.fc44
-    sourcerpm: git-2.55.0-1.fc44.src.rpm
+    evr: 2.56.0-1.fc44
+    sourcerpm: git-2.56.0-1.fc44.src.rpm
   - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-AutoLoader-5.74-525.fc44.noarch.rpm
     repoid: updates-archive
     size: 21040
@@ -438,13 +432,13 @@ arches:
     name: perl-Getopt-Std
     evr: 1.14-525.fc44
     sourcerpm: perl-5.42.3-525.fc44.src.rpm
-  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Git-2.55.0-1.fc44.noarch.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-Git-2.56.0-1.fc44.noarch.rpm
     repoid: updates-archive
-    size: 38603
-    checksum: sha256:5718eff4f68417fecc063343ea19d597d29bc51e40fda5057bbca7ab863dde94
+    size: 38325
+    checksum: sha256:e23446f06de4066f17de478e16aef56f4e0cf22ca3a00b9eebd4b991b794bea5
     name: perl-Git
-    evr: 2.55.0-1.fc44
-    sourcerpm: git-2.55.0-1.fc44.src.rpm
+    evr: 2.56.0-1.fc44
+    sourcerpm: git-2.56.0-1.fc44.src.rpm
   - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-HTTP-Tiny-0.096-1.fc44.noarch.rpm
     repoid: updates-archive
     size: 59181
@@ -571,6 +565,13 @@ arches:
     name: perl-overloading
     evr: 0.02-525.fc44
     sourcerpm: perl-5.42.3-525.fc44.src.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-podlators-6.0.2-522.fc44.noarch.rpm
+    repoid: updates-archive
+    size: 131256
+    checksum: sha256:7a39e84ec4086da1b274a1e22736285f1c0ee962c15c75706124c5ac5ec94ec6
+    name: perl-podlators
+    evr: 1:6.0.2-522.fc44
+    sourcerpm: perl-podlators-6.0.2-522.fc44.src.rpm
   - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/perl-vars-1.05-525.fc44.noarch.rpm
     repoid: updates-archive
     size: 12585
@@ -592,12 +593,12 @@ arches:
     name: tk
     evr: 1:9.0.2-2.fc44
     sourcerpm: tk-9.0.2-2.fc44.src.rpm
-  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/uv-0.12.9-1.fc44.x86_64.rpm
+  - url: https://fedoraproject-updates-archive.fedoraproject.org/fedora/44/x86_64/uv-0.12.19-1.fc44.x86_64.rpm
     repoid: updates-archive
-    size: 13110425
-    checksum: sha256:e042b953b8104f2ecb250d31c203ef4ecf0d69cfa224a2b366ca3df3763c3747
+    size: 13416296
+    checksum: sha256:5711a571dbc24da85fe08a784c70000272b71633d2662c5e8716046af9b770c9
     name: uv
-    evr: 0.12.9-1.fc44
-    sourcerpm: uv-0.12.9-1.fc44.src.rpm
+    evr: 0.12.19-1.fc44
+    sourcerpm: uv-0.12.19-1.fc44.src.rpm
   source: []
   module_metadata: []

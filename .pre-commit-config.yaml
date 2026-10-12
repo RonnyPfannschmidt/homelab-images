@@ -75,6 +75,19 @@ repos:
     # `#!/bin/sh` and `#!/usr/bin/env bash`. Forcing one flags the other's
     # every construct as undefined.
 
+- repo: local
+  hooks:
+  - id: rpm-lock-base
+    name: rpms.lock.yaml resolved against the Containerfile's base
+    # Renovate bumps the base digest and cannot relock; this is what turns its
+    # PR red in seconds instead of in dnf, five minutes into the image build.
+    # Regenerating needs the base image and dnf, so the hook only compares.
+    entry: python bootc/fedora-basesetup/relock.py --check
+    language: python
+    additional_dependencies: [pyyaml]
+    files: ^bootc/fedora-basesetup/(Containerfile|rpms\.(in|lock)\.yaml|relock\.py)$
+    pass_filenames: false
+
 # kjanat's fork, not rhysd's. Upstream has not tagged since v1.7.12 in March
 # 2026 and its last commit is April 2026, so it does not know `ubuntu-26.04` -
 # a label GitHub has made generally available - and fails every runner bump.
@@ -106,9 +119,7 @@ repos:
   hooks:
   - id: hadolint-docker
     files: Containerfile$
-    # DL3041 wants every `dnf install` pinned to a package version. That is the
-    # wrong shape for a bootc image: the base is pinned by digest (Renovate
-    # bumps it daily) and the package set is deliberately whatever that base's
-    # repositories hold at build time. Pinning versions here would mean hand-
-    # bumping them forever and would still not make the build reproducible.
+    # DL3041 wants every `dnf install` pinned to a package version. The pins
+    # live in rpms.lock.yaml - URL and sha256 per package, installed with every
+    # repository disabled - which hadolint cannot see from the RUN line.
     args: [--ignore, DL3041]
