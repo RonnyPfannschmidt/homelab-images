@@ -58,3 +58,17 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+---
+# Behind the shared entrance; Olares routes `<hash>.shared.olares.com` here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: routerimages
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

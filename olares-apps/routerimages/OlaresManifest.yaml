@@ -8,12 +8,10 @@ metadata:
   icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
   description: A synchronous OpenAI image API in front of Router, so Open WebUI can generate images with FlowStudio workflows
   title: Router Images
-  version: 0.1.0
+  version: 0.2.0
   categories:
     - AI Agents
-# An entrance because every app needs one; there is nothing to open. Callers
-# use the Service, http://routerimages.routerimages-shared:8080/v1, which
-# `options.shared` makes reachable from other namespaces.
+# An entrance because every app needs one; there is nothing to open.
 entrances:
   - name: routerimages
     port: 8080
@@ -23,11 +21,26 @@ entrances:
     openMethod: window
     authLevel: internal
     invisible: true
+# How other apps reach it: http://<hash>.shared.olares.com/v1, through the app
+# gateway, the way they reach Router. The Service in front of the pod is not
+# enough - app-np admits only system and user-internal namespaces, and Open
+# WebUI's is neither (measured 2026-10-12: a 504 from Open WebUI's mesh proxy,
+# nothing in this pod's log). The hash is Olares' own, read off the installed
+# app.
+sharedEntrances:
+  - name: routerimages
+    host: sharedentrances-api
+    port: 0
+    title: Router Images
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    authLevel: internal
+    invisible: true
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 0.1.0
+  versionName: 0.2.0
   upgradeDescription: |
+    v0.2.0: reachable from other apps. A shared entrance (`sharedentrances-api`, port 80) gives it a `*.shared.olares.com` host through the app gateway; 0.1.0's Service was fenced off from Open WebUI's namespace. The image moves to Python 3.14.
     v0.1.0: initial release.
   fullDescription: |
     Router serves FlowStudio image workflows only asynchronously: a plain
@@ -45,7 +58,8 @@ spec:
     usage log names this app rather than the original caller.
 
     Set `ROUTER_URL` to Router's shared entrance as the apps on the box reach
-    it, e.g. `http://<hash>.shared.olares.com/v1`.
+    it, e.g. `http://<hash>.shared.olares.com/v1`. Callers reach this app the
+    same way, at its own shared entrance.
   developer: ronnypfannschmidt
   submitter: ronnypfannschmidt
   website: https://github.com/RonnyPfannschmidt/homelab-images
@@ -64,8 +78,7 @@ permission:
   appData: false
 options:
   apiTimeout: 0
-  # Deploys into `routerimages-shared` and opens it to other namespaces, which
-  # is how Open WebUI reaches the Service.
+  # Deploys into `routerimages-shared`, once for the whole box.
   shared: true
   templateOnly: false
   dependencies:
