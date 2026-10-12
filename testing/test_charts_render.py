@@ -178,7 +178,9 @@ def test_model_app_declares_its_model_in_the_manifest(
     """
     manifest = yaml.safe_load((chart / "OlaresManifest.yaml").read_text())
     declared = {e["envName"]: e for e in manifest.get("envs") or []}
-    if not manifest.get("sharedEntrances"):
+    # The gateway flag, not the shared entrance: routerimages has one so other
+    # apps can reach it, and Router must not list it as a model.
+    if not (manifest.get("options") or {}).get("LLMGatewaySupported"):
         pytest.skip(f"{chart.name} is not a model app")
 
     missing = [name for name in MODEL_ENVS if name not in declared]
