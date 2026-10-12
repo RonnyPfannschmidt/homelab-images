@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: '0.1.0'
+description: A synchronous OpenAI image API in front of Olares' Router, for clients that cannot speak Router's asynchronous FlowStudio generations
+name: routerimages
+type: application
+version: '0.1.0'

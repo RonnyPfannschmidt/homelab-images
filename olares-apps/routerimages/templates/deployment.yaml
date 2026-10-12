@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: routerimages
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: routerimages
+spec:
+  replicas: {{ .Values.workloads.routerimages.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: routerimages
+  template:
+    metadata:
+      labels:
+        io.kompose.service: routerimages
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: routerimages
+          image: {{ .Values.image }}
+          env:
+            - name: ROUTER_URL
+              value: "{{ .Values.olaresEnv.ROUTER_URL }}"
+            - name: GENERATION_TIMEOUT
+              value: "{{ .Values.olaresEnv.GENERATION_TIMEOUT | default "600" }}"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: routerimages
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: routerimages
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
