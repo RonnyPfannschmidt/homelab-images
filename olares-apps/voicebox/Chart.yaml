@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: '0.6.0-8af7efe'
+description: Voicebox - local voice cloning, TTS and transcription with a web UI, an OpenAI-compatible speech API and an MCP server
+name: voicebox
+type: application
+version: '0.1.0'

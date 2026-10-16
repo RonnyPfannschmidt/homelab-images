@@ -1,0 +1,89 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  voicebox: 1
+metadata:
+  name: voicebox
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  description: Local voice cloning and TTS studio - web UI, OpenAI-compatible /v1/audio/speech and an MCP server
+  title: Voicebox
+  version: 0.1.0
+  # Not "AI Agents": openwebui-sync treats that category as a model-serving
+  # app and would add it to Open WebUI as a chat model.
+  categories:
+    - Productivity
+# Voicebox has no authentication at all: no middleware, and the OpenAI routes
+# accept an Authorization header and ignore it. `internal` keeps it behind
+# Authelia from outside the LAN; never give it a public sub-policy.
+entrances:
+  - name: voicebox
+    port: 17493
+    host: voicebox
+    title: Voicebox
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    openMethod: window
+    authLevel: internal
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 0.6.0-8af7efe
+  upgradeDescription: |
+    v0.1.0: initial release, upstream jamiepine/voicebox@8af7efe (0.6.0).
+  fullDescription: |
+    [Voicebox](https://github.com/jamiepine/voicebox) as an Olares app: the
+    web UI and API from upstream's own Docker image, on the GPU.
+
+    Engines are chosen per voice profile in the UI; models download on first
+    use into /olares/rootfs/Common/voicebox/cache. Qwen3-TTS 1.7B is the one
+    to start with for cloning, Kokoro the light one.
+
+    **The image is not reproducible.** Upstream's Dockerfile runs apt-get
+    update, resolves its Python requirements unhashed and installs Qwen3-TTS
+    from git HEAD. The source commit and the base images are pinned; the rest
+    is whatever resolved on the day of the build.
+
+    No authentication upstream, and models are never unloaded on idle; use
+    the UI or POST /models/unload to free VRAM.
+  developer: jamiepine
+  submitter: ronnypfannschmidt
+  website: https://voicebox.sh
+  sourceCode: https://github.com/jamiepine/voicebox
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/jamiepine/voicebox/blob/main/LICENSE
+  accelerator:
+    - mode: nvidia
+      requiredCpu: "1"
+      limitedCpu: "8"
+      requiredMemory: 4Gi
+      limitedMemory: 16Gi
+      # Models are fetched lazily; Qwen3-TTS 1.7B plus Whisper is ~6 GB.
+      requiredDisk: 10Gi
+      limitedDisk: 60Gi
+      requiredGPUMemory: 1Gi
+      limitedGPUMemory: 24Gi
+  supportArch:
+    - amd64
+permission:
+  appData: false
+  # The chart reads and writes /olares/rootfs/Common/voicebox.
+  appCommon: true
+options:
+  apiTimeout: 0
+  # Deploys into `voicebox-shared`, once for the whole box, like the other GPU
+  # apps. Clients in other apps will need a sharedEntrance, as routerimages has.
+  shared: true
+  templateOnly: false
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system
+envs:
+  - envName: HUGGINGFACE_TOKEN
+    required: false
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_HUGGINGFACE_TOKEN
