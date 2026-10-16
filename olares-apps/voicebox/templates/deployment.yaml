@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voicebox
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: voicebox
+spec:
+  replicas: {{ .Values.workloads.voicebox.replicaCount }}
+  selector:
+    matchLabels:
+      io.kompose.service: voicebox
+  # One GPU: a second pod would sit Pending on nvidia.com/gpumem.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: voicebox
+    spec:
+      enableServiceLinks: false
+      # No securityContext on purpose. Upstream's entrypoint starts as root,
+      # chowns the root-owned hostPath dirs below, and drops to `voicebox` with
+      # gosu. Olares' webhook refuses only an explicit runAsUser: 0, so the
+      # image default passes.
+      containers:
+        - name: voicebox
+          image: {{ .Values.image }}
+          env:
+            # "0" = no HAMi-core cap, as in the qwen38 charts: this box's
+            # HAMi-core usage counter drifts negative under alloc/free churn
+            # and then beats any positive limit. The gpumem request below only
+            # schedules the pod.
+            - name: CUDA_DEVICE_MEMORY_LIMIT
+              value: "0"
+            - name: CUDA_DEVICE_MEMORY_LIMIT_0
+              value: "0"
+            - name: HF_TOKEN
+              value: "{{ .Values.olaresEnv.HUGGINGFACE_TOKEN }}"
+            - name: LOG_LEVEL
+              value: info
+            # Upstream's compose sets it; numba otherwise caches beside its
+            # own package, which the voicebox user cannot write.
+            - name: NUMBA_CACHE_DIR
+              value: /tmp/numba_cache
+            - name: TRITON_CACHE_DIR
+              value: /home/voicebox/.cache/triton
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - containerPort: 17493
+              name: http
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 17493
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 17493
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "8192"
+            limits:
+              cpu: "8"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+              nvidia.com/gpumem: "8192"
+          volumeMounts:
+            - mountPath: /app/data
+              name: data
+            # The HF model cache lives under it, along with torch's and Triton's.
+            - mountPath: /home/voicebox/.cache
+              name: cache
+            - mountPath: /dev/shm
+              name: dshm
+      volumes:
+        - name: data
+          hostPath:
+            path: /olares/rootfs/Common/voicebox/data
+            type: DirectoryOrCreate
+        - name: cache
+          hostPath:
+            path: /olares/rootfs/Common/voicebox/cache
+            type: DirectoryOrCreate
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      runtimeClassName: nvidia
+      schedulerName: hami-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voicebox
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: voicebox
+  ports:
+    - name: http
+      port: 17493
+      targetPort: 17493
