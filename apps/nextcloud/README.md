@@ -1,6 +1,6 @@
 # nextcloud
 
-Nextcloud 34.0.4 with the 9 apps the homeserver serves, baked in and pinned.
+Nextcloud 34.0.5 with the 9 apps the homeserver serves, baked in and pinned.
 
 `ghcr.io/ronnypfannschmidt/nextcloud:sha-<commit>` — amd64 and arm64 in one
 manifest list. Pin a deployment to a `sha-` tag; `latest` moves.
