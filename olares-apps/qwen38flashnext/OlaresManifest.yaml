@@ -10,9 +10,9 @@ metadata:
   # Reuses the qwen3.6 app's icon asset on aamsellem's external host, as the
   # other Qwen3.8 charts do: this chart publishes no icons.
   icon: https://orales-one-market.aamsellem.workers.dev/icons/llamacppqwen36beellamavisionone.png
-  description: "Qwen3.8-Flash-Next 125B MoE on llama.cpp — UD-IQ3_XXS, experts in host RAM behind a GPU expert cache, n-gram table paged from NVMe, image input @ 128K"
+  description: "Qwen3.8-Flash-Next 125B MoE on llama.cpp — UD-IQ3_XXS, experts in host RAM behind a GPU expert cache, n-gram table paged from NVMe, image input @ 96K, MTP"
   title: Qwen38 Flash-Next
-  version: 1.0.1
+  version: 1.1.5
   # "AI Agents" is what makes openwebui-sync pick the app up as a model
   # provider: the name starts with the model, not an engine prefix.
   categories:
@@ -42,8 +42,10 @@ sharedEntrances:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 1.0.1
+  versionName: 1.1.5
   upgradeDescription: |
+    v1.1.5: llama.cpp b11889 and MTP speculative decoding (unsloth's self-contained Q4_K_M head, 2 drafted tokens, 2.6 GB extra download; mainline cannot load their shared- heads). Measured on this box, decode goes from 42 to ~48 tok/s at 8K and from 26 to ~37 at 90K. The expert cache drops to 11 GiB and the context to 96K: MTP's VRAM grows with the context and filled the card past ~115K. A change to the model values now restarts the engine.
+
     v1.0.0: initial release - Qwen3.8-Flash-Next on stock llama.cpp, sized for this card used alone.
 
     **It needs the GPU to itself.** It reserves the same 23552 MiB as HyperQwen, so the two cannot run at once: stop HyperQwen first.
@@ -60,18 +62,19 @@ spec:
     RTX 5090M (24 GB GDDR7, sm_120 Blackwell) + 96 GB DDR5 + Core Ultra 9 275HX.
 
     Stack:
-      - Image: ghcr.io/ggml-org/llama.cpp:server-cuda13-b11515
+      - Image: ghcr.io/ggml-org/llama.cpp:server-cuda13-b11889
       - Weights: unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ3_XXS (3 shards, 76.3 GiB)
       - Vision projector: unsloth mmproj-F16.gguf (0.84 GiB)
       - Placement: dense layers on the GPU; routed experts in host RAM (-cmoe)
-        with an 8 GiB GPU expert cache; n-gram table on the CPU, mmap'd
+        with an 11 GiB GPU expert cache; n-gram table on the CPU, mmap'd
+      - Speculative decoding: MTP, unsloth self-contained Q4_K_M head, 2 drafted tokens
       - KV cache: q8_0
-      - Context: 128K
+      - Context: 96K
 
     It needs the GPU to itself: stop HyperQwen before starting it.
 
-    Not benchmarked on this box. For scale, upstream measured the expert cache
-    at 40.7 tok/s on a desktop RTX 4090 (Q4_0, 11 GiB cache).
+    Measured on this box: ~48 tok/s decode at 8K, ~37 at 90K (greedy;
+    a few tok/s less at temperature 1.0), prefill ~520-670 tok/s.
   developer: ronnypfannschmidt
   website: https://github.com/ggml-org/llama.cpp
   sourceCode: https://github.com/ggml-org/llama.cpp
@@ -129,11 +132,11 @@ envs:
   # MODEL_SOURCE. testing/test_charts_render.py holds these equal to the
   # template's own fallbacks.
   - envName: MODEL_SOURCE
-    default: "hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include mmproj-F16.gguf"
+    default: "hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00003.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include mmproj-F16.gguf,hf://unsloth/Qwen3.8-Flash-Next-GGUF --include MTP/mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf"
     type: string
     required: true
     description: >-
-      The three UD-IQ3_XXS shards and the vision projector, fetched by llm-init into the shared hub cache.
+      The three UD-IQ3_XXS shards, the vision projector and the MTP draft head, fetched by llm-init into the shared hub cache.
     regex: "^hf://"
   - envName: MODEL_NAME
     default: "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS"
