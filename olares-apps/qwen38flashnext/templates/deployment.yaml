@@ -6,6 +6,9 @@
 {{- with .Values.model.mmproj.repo }}
 {{- $sources = append $sources (printf "hf://%s --include %s" . $.Values.model.mmproj.file) }}
 {{- end }}
+{{- with .Values.model.mtp.repo }}
+{{- $sources = append $sources (printf "hf://%s --include %s" . $.Values.model.mtp.file) }}
+{{- end }}
 {{- $modelName := .Values.olaresEnv.MODEL_NAME | default (printf "%s:%s" .Values.model.target.repo .Values.model.target.quant) }}
 {{- $modelMode := .Values.olaresEnv.MODEL_MODE | default "chat" }}
 {{- $modelSupports := .Values.olaresEnv.MODEL_SUPPORTS | default "thinking,tools,vision" }}
@@ -23,6 +26,9 @@ data:
   TARGET_FILES: "{{ join " " .Values.model.target.files }}"
   MMPROJ_REPO: "{{ .Values.model.mmproj.repo }}"
   MMPROJ_FILE: "{{ .Values.model.mmproj.file }}"
+  MTP_REPO: "{{ .Values.model.mtp.repo }}"
+  MTP_FILE: "{{ .Values.model.mtp.file }}"
+  MTP_DRAFT_MAX: "{{ .Values.model.mtp.draftMax }}"
   # MUST equal llm-init's MODEL_NAME: llm-init only enables its OpenAI data
   # plane once the engine's /v1/models advertises exactly this id, and answers
   # 503 {"code":"not_ready"} forever otherwise.
@@ -101,6 +107,17 @@ data:
             log "vision disabled (no mmproj.repo configured)"
         fi
 
+        # -ngld all: the head is one layer and is drafted every token, so it
+        # lives on the GPU whole; with -fit off "auto" has nothing to size by.
+        MTP_ARGS=""
+        if [ -n "${MTP_REPO:-}" ] && [ -n "${MTP_FILE:-}" ]; then
+            MTP_PATH=$(find_cached_file "$MTP_REPO" "$MTP_FILE")
+            log "mtp=$MTP_PATH"
+            MTP_ARGS="-md $MTP_PATH --spec-type draft-mtp --spec-draft-n-max ${MTP_DRAFT_MAX:-2} -ngld all"
+        else
+            log "speculative decoding disabled (no mtp.repo configured)"
+        fi
+
         LLAMA_SERVER=$(command -v llama-server 2>/dev/null || echo /app/llama-server)
         log "engine=$LLAMA_SERVER"
 
@@ -125,12 +142,10 @@ data:
         # itself from free device memory. Every size here is pinned instead,
         # which is also why the expert placement is -cmoe plus a cache rather
         # than --fit choosing how many expert layers go on the card.
-        #
-        # No --spec-type: the MTP draft head needs ggml-org/llama.cpp#27836,
-        # which is not merged.
         exec "$LLAMA_SERVER" \
             --model "$FIRST_SHARD" \
             $MMPROJ_ARGS \
+            $MTP_ARGS \
             --alias "${MODEL_ALIAS:-$MODEL_NAME}" \
             --host 0.0.0.0 --port "${LLAMACPP_PORT:-8081}" \
             -ngl 99 \
@@ -305,17 +320,23 @@ spec:
         io.bytetrade.app: "true"
         applications.app.bytetrade.io/name: "{{ .Release.Name }}"
         applications.app.bytetrade.io/raw-app-name: "{{ .Release.Name }}"
+      annotations:
+        # The sizes and the wrapper reach the engine only through the two
+        # ConfigMaps, and a ConfigMap change alone does not roll the pod: an
+        # upgrade from 11264 to 10240 kept running at 11264. Hashing the
+        # model values and the chart version (the wrapper is literal text, so
+        # it only changes with a new version) makes either change roll it.
+        checksum/flashnext: "{{ list .Chart.Version .Values.model | toJson | sha256sum }}"
     spec:
       containers:
         - name: llamacpp
-          # Stock upstream llama.cpp, CUDA 13 build b11515, the newest
-          # cuda13 server image published after --moe-cache-mib landed
-          # (ggml-org/llama.cpp#29887, merged 2026-10-07 as d6cf9acb).
-          # Manifest digest
-          # sha256:6869e4456217802e5372774be236a9aa93666cfb7f033b7d39cd58b178af6489,
+          # Stock upstream llama.cpp, CUDA 13 build b11889 (2026-10-25): MTP
+          # with the mmproj loaded (ggml-org/llama.cpp#30397), the SLRU expert
+          # cache (#30637) and QSA without a kq_mask (#30965). Manifest digest
+          # sha256:7801848d4d37bc0d7a196fce49496e00b0e24bf6f81f36ba629f6be423f11f02,
           # recorded rather than pinned with `@`, as on the other charts.
           # CUDA 13 because the box is sm_120 Blackwell.
-          image: "ghcr.io/ggml-org/llama.cpp:server-cuda13-b11515"
+          image: "ghcr.io/ggml-org/llama.cpp:server-cuda13-b11889"
           command: ["/bin/sh", "/llm-init/wrappers/flashnext.sh"]
           envFrom:
             - configMapRef:
