@@ -1,0 +1,14 @@
+# Replica lever. Olares drives it (the manifest's `workloadReplicas`), and the
+# CI harness zeroes it so a render test never starts a pod.
+workloads:
+  voicebox:
+    replicaCount: 1
+
+# Built by .github/workflows/build-voicebox.yml from apps/voicebox/build.sh.
+# A tag, not a digest: that build is not reproducible, so the digest is not
+# known before the push. The workflow fails when this tag is not the one
+# build.sh produces.
+image: ghcr.io/ronnypfannschmidt/voicebox:0.6.0-8af7efe
+
+# Olares fills this from the manifest's envs at install time.
+olaresEnv: {}
