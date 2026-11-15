@@ -50,7 +50,7 @@ repos:
     args: [--maxkb=512]
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.17.3
+  rev: v0.17.4
   hooks:
   - id: ruff-check
     args: [--fix]
@@ -104,7 +104,7 @@ repos:
 # Different question than actionlint's: injection, permissions, unpinned
 # actions. It also reads this file and every `action.yml`, not just workflows.
 - repo: https://github.com/zizmorcore/zizmor-pre-commit
-  rev: v1.31.1
+  rev: v1.32.0
   hooks:
   - id: zizmor
     # Everything zizmor grades actionable. The informational tier is
