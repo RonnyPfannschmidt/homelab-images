@@ -11,7 +11,7 @@ metadata:
   icon: https://orales-one-market.aamsellem.workers.dev/icons/basaltqwen38one.png
   description: "Fork of aamsellem's basaltqwen38one 1.3.2 with Cudecnik's refusal-projection control vector loaded: the same pack and engine, refusals projected out of the residual stream at runtime"
   appid: basaltqwen38abl
-  title: Anaelith Qwen38 Flash Next One (abliterated)
+  title: Flash Next One (abliterated)
   version: '1.3.2'
   categories:
     - LLM Chat
