@@ -1,0 +1,25 @@
+admin: ""
+bfl:
+  username: ""
+userspace:
+  appCache: ""
+  appCommon: ""
+domain:
+  basaltconsole: ""
+  basaltchat: ""
+olaresEnv:
+  MODEL_SOURCE: "hf://jesdga/Qwen3.8-Flash-Next-Basalt --revision 65de5a9e636e8bbe1200cbcd6eb8aa421e6a66c6 --include Qwen3.8-FN-UD-IQ3_XXS.basalt"
+  MODEL_NAME: "jesdga/Qwen3.8-Flash-Next-Basalt:UD-IQ3_XXS-abliterated"
+  MODEL_MODE: "chat"
+  MODEL_SUPPORTS: "thinking,tools,vision"
+  MODEL_REASONING_EFFORT: "none,minimal,low,medium,high,xhigh,max"
+  MODEL_REASONING_EFFORT_DEFAULT: "xhigh"
+  ENGINE_ARGS: "--context 262144 --parallel 2 --kv int8 --resident-budget-gib 48 --ram-reserve-mib 12288 --pool-workers 15 --fit-max-tokens --exp umwait=2 --vision dynamic --control-vector-scaled /data/cvec/Qwen3.8-Flash-Next-refusal-projection.gguf:1.0 --control-vector-layer-range 4 44 --cvec-mode project --cvec-dir per-layer"
+  LOG_LEVEL: ""
+  HF_ENDPOINT: ""
+  HF_TOKEN: ""
+workloads:
+  basaltqwen38abl:
+    replicaCount: 1
+  llminit:
+    replicaCount: 1
