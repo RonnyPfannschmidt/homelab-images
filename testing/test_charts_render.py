@@ -125,6 +125,22 @@ def test_chart_has_an_olares_manifest(chart: Path) -> None:
     )
 
 
+def test_manifest_title_fits_olares_limit(chart: Path) -> None:
+    """Olares refuses the install of an app whose title is over 30 characters.
+
+    The market lists such an app happily; only `market install` says
+    "metadata.title must be 1-30 characters", as it did for basaltqwen38abl.
+    """
+    manifest = yaml.safe_load((chart / "OlaresManifest.yaml").read_text())
+    titles = {"OlaresManifest.yaml": manifest["metadata"].get("title") or ""}
+    for translation in chart.glob("i18n/*/OlaresManifest.yaml"):
+        metadata = yaml.safe_load(translation.read_text()).get("metadata") or {}
+        if "title" in metadata:
+            titles[str(translation.relative_to(chart))] = metadata["title"] or ""
+    too_long = {where: t for where, t in titles.items() if not 1 <= len(t) <= 30}
+    assert not too_long, f"{chart.name}: titles outside Olares' 1-30 characters: {too_long}"
+
+
 def test_chart_version_matches_nothing_stale(chart: Path) -> None:
     """Chart.yaml and OlaresManifest.yaml each carry a version; neither may be absent.
 
