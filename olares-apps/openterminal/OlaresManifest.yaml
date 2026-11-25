@@ -1,0 +1,94 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  openterminal: 1
+metadata:
+  name: openterminal
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  description: A shell and files for Open WebUI's models, in a container of its own
+  title: Open Terminal
+  version: 0.1.0
+  # Not "AI Agents": openwebui-sync treats that category as a model-serving
+  # app and would add it to Open WebUI as a chat model.
+  categories:
+    - Developer Tools
+# An entrance because every app needs one; the API has no page to open.
+entrances:
+  - name: openterminal
+    port: 8000
+    host: openterminal
+    title: Open Terminal
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    openMethod: window
+    authLevel: private
+    invisible: true
+# How Open WebUI reaches it: http://<hash>.shared.olares.com. Every app on the
+# box can reach that host too, so the API key is what guards the shell.
+sharedEntrances:
+  - name: openterminal
+    host: sharedentrances-api
+    port: 0
+    title: Open Terminal
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    authLevel: internal
+    invisible: true
+permission:
+  appData: true
+  userData:
+    - Home/Documents
+    - Home/Terminal
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 0.18.3
+  runAsUser: true
+  upgradeDescription: |
+    v0.1.0: initial release, upstream open-webui/open-terminal 0.18.3 (slim).
+  fullDescription: |
+    [Open Terminal](https://github.com/open-webui/open-terminal) for Open
+    WebUI: a model can run commands and edit files in this container.
+
+    It sees its own home directory, `Home/Documents` read-only at
+    /olares/Documents, and `Home/Terminal` at /olares/Terminal. It runs as uid
+    1000 without root, Docker or a Kubernetes token, and has no Olares login.
+    It can reach the network: the internet, the LAN, and other apps' shared
+    entrances, which identify it as this app. Commands run as the server's own
+    user, so they can read the API key.
+
+    Set `OPEN_TERMINAL_API_KEY` at install, then add
+    http://<hash>.shared.olares.com with that key under Admin Settings,
+    Integrations, Open Terminal.
+  developer: open-webui
+  submitter: ronnypfannschmidt
+  website: https://docs.openwebui.com/features/open-terminal/
+  sourceCode: https://github.com/open-webui/open-terminal
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/open-webui/open-terminal/blob/main/LICENSE
+  requiredCpu: 100m
+  limitedCpu: '4'
+  requiredMemory: 256Mi
+  limitedMemory: 4Gi
+  requiredDisk: 128Mi
+  limitedDisk: 10Gi
+  supportArch:
+    - amd64
+options:
+  apiTimeout: 0
+  shared: true
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system
+envs:
+  - envName: OPEN_TERMINAL_API_KEY
+    type: password
+    required: true
+    editable: true
+    applyOnChange: true
+    regex: "^[A-Za-z0-9_-]{32,}$"
+    description: >-
+      The key Open WebUI presents. It grants a shell in this container; at least 32 characters.

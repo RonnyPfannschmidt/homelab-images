@@ -1,0 +1,15 @@
+# Replica lever. Olares drives it (the manifest's `workloadReplicas`), and the
+# CI harness zeroes it so a render test never starts a pod.
+workloads:
+  openterminal:
+    replicaCount: 1
+
+# 0.18.3-slim: git, curl and jq, no sudo, no Docker CLI.
+image: ghcr.io/open-webui/open-terminal@sha256:8a74086d37dffcec397b94dae61a06bd40510dad3f97ba114319e6455b3ebbc8
+
+# Olares fills these at install time: the paths from `permission`, the rest
+# from the manifest's envs.
+userspace:
+  appData: ''
+  userData: ''
+olaresEnv: {}
