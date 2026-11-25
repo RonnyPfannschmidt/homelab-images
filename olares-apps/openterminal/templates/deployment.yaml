@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openterminal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: openterminal
+spec:
+  replicas: {{ .Values.workloads.openterminal.replicaCount }}
+  # Two servers would share one home directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      io.kompose.service: openterminal
+  template:
+    metadata:
+      labels:
+        io.kompose.service: openterminal
+    spec:
+      enableServiceLinks: false
+      # A shell for a language model has no business with the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: openterminal
+          image: {{ .Values.image }}
+          # Not the image's entrypoint: it expects root, to chown the home and
+          # drop to uid 1000 with gosu.
+          command: ["/usr/bin/tini", "--", "open-terminal", "run"]
+          args: ["--host", "0.0.0.0", "--port", "8000"]
+          workingDir: /home/user
+          env:
+            - name: HOME
+              value: /home/user
+            - name: OPEN_TERMINAL_API_KEY
+              value: {{ .Values.olaresEnv.OPEN_TERMINAL_API_KEY | quote }}
+            # Open WebUI proxies every call, so no page needs to reach this.
+            - name: OPEN_TERMINAL_CORS_ALLOWED_ORIGINS
+              value: http://localhost
+            - name: OPEN_TERMINAL_ENABLE_BROWSER
+              value: 'false'
+            - name: OPEN_TERMINAL_ENABLE_DESKTOP
+              value: 'false'
+            # The Olares folders are outside the home directory.
+            - name: OPEN_TERMINAL_FILE_BROWSER_ROOT
+              value: filesystem
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '4'
+              memory: 4Gi
+          volumeMounts:
+            - name: home
+              mountPath: /home/user
+            - name: tmp
+              mountPath: /tmp
+            - name: documents
+              mountPath: /olares/Documents
+              readOnly: true
+            - name: terminal
+              mountPath: /olares/Terminal
+      volumes:
+        - name: home
+          hostPath:
+            path: "{{ .Values.userspace.appData }}/home"
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: documents
+          hostPath:
+            path: "{{ .Values.userspace.userData }}/Documents"
+            type: Directory
+        - name: terminal
+          hostPath:
+            path: "{{ .Values.userspace.userData }}/Terminal"
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openterminal
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: openterminal
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+# Behind the shared entrance; Olares routes `<hash>.shared.olares.com` here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: openterminal
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
