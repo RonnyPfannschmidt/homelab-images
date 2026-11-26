@@ -1,0 +1,59 @@
+# Kyutai Pocket TTS behind teddybear082's OpenAI-compatible server, CPU only.
+#
+# Reproducible from three pins: the base by digest, the server by commit and
+# tarball checksum, every wheel by hash in uv.lock. No apt: soundfile's wheel
+# bundles the libsndfile that writes MP3, and ffmpeg is only for the `speed`
+# parameter, which the server ignores with a warning when it is missing.
+FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+
+FROM docker.io/library/python:3.12-slim@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b AS build
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+# The server's main as of 2026-10-31; its images are built only for release
+# tags, and the last one predates Pocket TTS 2.1.
+ARG SERVER_COMMIT=2a8f5e5b8fdc65da72e5cd0ffc0b8ef817e3a616
+ADD --checksum=sha256:06de2fcf95fcf7817f498b34a9574aa4ca48a98b8e445e2eb08d93adfa94e888 \
+    https://github.com/teddybear082/pocket-tts-openai_streaming_server/archive/${SERVER_COMMIT}.tar.gz \
+    /tmp/server.tar.gz
+
+# The server checks voices against its own list of eight, which predates
+# Pocket TTS's `estelle`, and rejects her before Pocket TTS is asked.
+RUN mkdir /app \
+ && tar -xzf /tmp/server.tar.gz -C /app --strip-components=1 \
+ && python3 -I - <<'EOF'
+from pathlib import Path
+config = Path("/app/app/config.py")
+old = "BUILTIN_VOICES = ['alba',"
+text = config.read_text()
+assert text.count(old) == 1, "the voice list moved; the patch needs redoing"
+config.write_text(text.replace(old, "BUILTIN_VOICES = ['estelle', 'alba',"))
+EOF
+
+COPY apps/pockettts/pyproject.toml apps/pockettts/uv.lock /opt/lock/
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON=/usr/local/bin/python3 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
+RUN uv sync --frozen --no-install-project --project /opt/lock
+
+
+FROM docker.io/library/python:3.12-slim@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /app /app
+
+# Not root, and numeric so no passwd entry is needed. HOME is writable only
+# when the chart mounts it; HF_HOME and the logs go to mounts of their own.
+USER 1000:1000
+WORKDIR /app
+ENV PATH=/opt/venv/bin:/usr/local/bin:/usr/bin:/bin \
+    HOME=/tmp \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POCKET_TTS_HOST=0.0.0.0 \
+    POCKET_TTS_PORT=49112 \
+    POCKET_TTS_VOICES_DIR=/app/voices
+EXPOSE 49112
+ENTRYPOINT ["python3", "/app/server.py"]

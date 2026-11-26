@@ -1,0 +1,157 @@
+# Build the pockettts app image and hold its chart's pin to it.
+#
+# The same shape as build-routerimages.yml, for the same reasons: amd64 only,
+# the build a function of apps/pockettts/ alone, two builds checked to be
+# bit-identical, and the digest learned from a throwaway registry before any
+# push so the chart can pin it in the same pull request.
+
+name: pockettts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/pockettts/**
+      - olares-apps/pockettts/values.yaml
+      - .github/workflows/build-pockettts.yml
+  pull_request:
+    paths:
+      - apps/pockettts/**
+      - olares-apps/pockettts/values.yaml
+      - .github/workflows/build-pockettts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pockettts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build, reproduce, check the pin
+    # podman 5 for --source-date-epoch/--rewrite-timestamp; see build-apps.yml.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Work out the source commit and the pin
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          src=$(git log -1 --format=%H -- apps/pockettts)
+          {
+            echo "image=ghcr.io/$owner/pockettts"
+            echo "src=$src"
+            echo "short=$(git rev-parse --short "$src")"
+            echo "sde=$(git log -1 --format=%ct "$src")"
+            echo "pinned=$(sed -n 's/^image: .*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' olares-apps/pockettts/values.yaml)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build twice
+        run: |
+          for tag in a b; do
+            podman build --pull=missing --no-cache \
+              --platform linux/amd64 \
+              --source-date-epoch "${{ steps.meta.outputs.sde }}" \
+              --rewrite-timestamp \
+              --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+              --label org.opencontainers.image.revision=${{ steps.meta.outputs.src }} \
+              -t "localhost/pockettts:$tag" \
+              -f apps/pockettts/Containerfile \
+              .
+          done
+
+      # The request Open WebUI's OpenAI speech engine sends, under the chart's
+      # restrictions. The first start downloads the model from Hugging Face.
+      - name: Smoke test
+        run: |
+          podman run -d --name smoke --read-only --user 1000:1000 --cap-drop ALL \
+            --tmpfs /tmp:rw,size=1g,mode=1777 --tmpfs /data:rw,size=1g,mode=1777 --tmpfs /app/logs:rw,mode=1777 \
+            -e HF_HOME=/data/huggingface -e POCKET_TTS_VOICE_CACHE_DIR=/data/voice_cache \
+            -p 49112:49112 localhost/pockettts:a
+          for _ in $(seq 150); do curl -fsS http://127.0.0.1:49112/health && break; sleep 2; done
+          curl -fsS http://127.0.0.1:49112/health
+          curl -fsS -o /tmp/speech -w '%{content_type}\n' \
+            -H 'Content-Type: application/json' \
+            -d '{"input":"Hello from the smoke test.","voice":"estelle","model":"tts-1"}' \
+            http://127.0.0.1:49112/v1/audio/speech | tee /tmp/type
+          grep -qx 'audio/mpeg' /tmp/type
+          test "$(stat -c %s /tmp/speech)" -gt 10000
+          podman rm -f smoke
+
+      # The digest a push produces, learned without pushing anywhere real.
+      - name: Push both builds to a throwaway registry
+        id: local
+        run: |
+          podman run -d --name registry -p 5000:5000 \
+            docker.io/library/registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+          for _ in $(seq 20); do curl -fsS http://127.0.0.1:5000/v2/ && break; sleep 0.5; done
+          for tag in a b; do
+            podman push --tls-verify=false --digestfile "/tmp/digest-$tag" \
+              "localhost/pockettts:$tag" "docker://localhost:5000/pockettts:$tag"
+          done
+          echo "a=$(cat /tmp/digest-a)" >> "$GITHUB_OUTPUT"
+          echo "b=$(cat /tmp/digest-b)" >> "$GITHUB_OUTPUT"
+
+      - name: The two builds are identical
+        run: |
+          echo "first  ${{ steps.local.outputs.a }}"
+          echo "second ${{ steps.local.outputs.b }}"
+          test "${{ steps.local.outputs.a }}" = "${{ steps.local.outputs.b }}"
+
+      - name: values.yaml pins this build
+        run: |
+          built="${{ steps.local.outputs.a }}"
+          pinned="${{ steps.meta.outputs.pinned }}"
+          if [ "$built" != "$pinned" ]; then
+            echo "::error file=olares-apps/pockettts/values.yaml::pins ${pinned:-nothing}, the build is $built; set image: ${{ steps.meta.outputs.image }}@$built"
+            exit 1
+          fi
+
+      - name: Log in to ghcr.io
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push, and check it landed as pinned
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          image="${{ steps.meta.outputs.image }}"
+          podman push --digestfile /tmp/digest localhost/pockettts:a "docker://$image:sha-${{ steps.meta.outputs.short }}"
+          test "$(cat /tmp/digest)" = "${{ steps.meta.outputs.pinned }}"
+          podman push localhost/pockettts:a "docker://$image:latest"
+
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # The same two signatures as the other images: keyless for provenance,
+      # keyed because that is what policy.json can require.
+      - name: Sign (keyless)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          cosign sign --yes "${{ steps.meta.outputs.image }}@${{ steps.meta.outputs.pinned }}"
+
+      - name: Sign (keyed)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.COSIGN_PRIVATE_KEY != ''
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${{ steps.meta.outputs.image }}@${{ steps.meta.outputs.pinned }}"
