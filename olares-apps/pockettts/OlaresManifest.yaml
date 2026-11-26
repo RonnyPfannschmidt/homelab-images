@@ -39,26 +39,26 @@ permission:
 spec:
   # Required by lint whenever options.shared is true.
   onlyAdmin: true
-  versionName: 2.5.4
+  versionName: 3.0.2
   runAsUser: true
   upgradeDescription: |
-    v0.1.0: initial release, teddybear082/pocket-tts-openai_streaming_server 2.5.4.
+    v0.1.0: initial release, Pocket TTS 3.0.2 behind teddybear082's server.
   fullDescription: |
     [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) through
     [an OpenAI-compatible server](https://github.com/teddybear082/pocket-tts-openai_streaming_server),
     on the CPU only.
 
-    Open WebUI's OpenAI speech engine calls `POST /v1/audio/speech`. Any
-    `hf://` voice clones from its recording; the default is Kyutai's French
-    voice `estelle` reading English. The server lists voices at `/v1/voices`,
-    not the `/v1/audio/voices` Open WebUI asks for, so set the voice in the
-    admin audio settings rather than picking it.
+    Open WebUI's OpenAI speech engine calls `POST /v1/audio/speech`. The
+    default voice is Kyutai's French `estelle` reading English; Pocket TTS's
+    other built-in voices work by name. The server lists voices at
+    `/v1/voices`, not the `/v1/audio/voices` Open WebUI asks for, so set the
+    voice in the admin audio settings rather than picking it.
 
     The model and the cloned voices are cached in the app's data directory.
   developer: teddybear082
   submitter: ronnypfannschmidt
   website: https://github.com/kyutai-labs/pocket-tts
-  sourceCode: https://github.com/teddybear082/pocket-tts-openai_streaming_server
+  sourceCode: https://github.com/RonnyPfannschmidt/homelab-images/tree/main/apps/pockettts
   locale:
     - en-US
   license:

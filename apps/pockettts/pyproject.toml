@@ -1,0 +1,37 @@
+# The dependency set of the image, not a package. The server itself is
+# fetched by commit in the Containerfile: it has no build system to install.
+#
+# The wrapper's own list, with Pocket TTS pinned to 3.0.2: the newest release
+# that still has `export_model_state`, which the wrapper imports and 3.1.0
+# removed.
+[project]
+name = "pockettts-image"
+version = "0"
+requires-python = "==3.12.*"
+dependencies = [
+  "flask>=3.0.0",
+  "waitress>=3.0.0",
+  "pocket-tts==3.0.2",
+  "torch>=2.0.0,<=2.8.0",
+  "torchaudio>=2.0.0,<=2.8.0",
+  "torchao==0.13.0",
+  "scipy>=1.10.0",
+  "numpy>=1.24.0",
+  "soundfile>=0.12.0",
+]
+
+[tool.uv]
+package = false
+# The one box that runs it.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+# CPU wheels: the default index's torch pulls in CUDA, gigabytes the CPU-only
+# server never loads.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
