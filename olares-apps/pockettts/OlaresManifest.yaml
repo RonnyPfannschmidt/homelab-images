@@ -1,0 +1,81 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+workloadReplicas:
+  pockettts: 1
+metadata:
+  name: pockettts
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  description: Kyutai Pocket TTS on the CPU, behind an OpenAI-compatible speech API
+  title: Pocket TTS
+  version: 0.1.0
+  # Not "AI Agents": openwebui-sync treats that category as a model-serving
+  # app and would add it to Open WebUI as a chat model.
+  categories:
+    - Utilities
+# An entrance because every app needs one. The server's own test page is
+# behind it, for whoever owns the box.
+entrances:
+  - name: pockettts
+    port: 49112
+    host: pockettts
+    title: Pocket TTS
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    openMethod: window
+    authLevel: private
+    invisible: true
+# How Open WebUI reaches it: http://<hash>.shared.olares.com/v1. There is no
+# API key; every app on the box can reach that host and make it speak.
+sharedEntrances:
+  - name: pockettts
+    host: sharedentrances-api
+    port: 0
+    title: Pocket TTS
+    icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+    authLevel: internal
+    invisible: true
+permission:
+  appData: true
+spec:
+  # Required by lint whenever options.shared is true.
+  onlyAdmin: true
+  versionName: 2.5.4
+  runAsUser: true
+  upgradeDescription: |
+    v0.1.0: initial release, teddybear082/pocket-tts-openai_streaming_server 2.5.4.
+  fullDescription: |
+    [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) through
+    [an OpenAI-compatible server](https://github.com/teddybear082/pocket-tts-openai_streaming_server),
+    on the CPU only.
+
+    Open WebUI's OpenAI speech engine calls `POST /v1/audio/speech`. Any
+    `hf://` voice clones from its recording; the default is Kyutai's French
+    voice `estelle` reading English. The server lists voices at `/v1/voices`,
+    not the `/v1/audio/voices` Open WebUI asks for, so set the voice in the
+    admin audio settings rather than picking it.
+
+    The model and the cloned voices are cached in the app's data directory.
+  developer: teddybear082
+  submitter: ronnypfannschmidt
+  website: https://github.com/kyutai-labs/pocket-tts
+  sourceCode: https://github.com/teddybear082/pocket-tts-openai_streaming_server
+  locale:
+    - en-US
+  license:
+    - text: MIT
+      url: https://github.com/teddybear082/pocket-tts-openai_streaming_server/blob/main/LICENSE
+  requiredCpu: 100m
+  limitedCpu: '4'
+  requiredMemory: 512Mi
+  limitedMemory: 3Gi
+  requiredDisk: 1Gi
+  limitedDisk: 5Gi
+  supportArch:
+    - amd64
+options:
+  apiTimeout: 0
+  shared: true
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system

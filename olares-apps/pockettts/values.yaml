@@ -1,0 +1,13 @@
+# Replica lever. Olares drives it (the manifest's `workloadReplicas`), and the
+# CI harness zeroes it so a render test never starts a pod.
+workloads:
+  pockettts:
+    replicaCount: 1
+
+# 2.5.4, the newest published release. The project builds images only for
+# tags, so its `main` tag is an older February build.
+image: ghcr.io/teddybear082/pocket-tts-openai_streaming_server@sha256:0e8341241c07e6ec550e3290ba209c8514fadbc335f6314b53c48f0d5156fb36
+
+# Olares fills this at install time from `permission.appData`.
+userspace:
+  appData: ''

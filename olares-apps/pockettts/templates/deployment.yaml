@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pockettts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    io.kompose.service: pockettts
+spec:
+  replicas: {{ .Values.workloads.pockettts.replicaCount }}
+  # Two servers would share one cache directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      io.kompose.service: pockettts
+  template:
+    metadata:
+      labels:
+        io.kompose.service: pockettts
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image's `pockettts` user.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: pockettts
+          image: {{ .Values.image }}
+          env:
+            # The 2026-04 English model. Cloning a French recording gives
+            # English with that speaker's accent.
+            - name: POCKET_TTS_LANGUAGE
+              value: english
+            # Kyutai's `estelle`. The server's own list of built-in voices
+            # predates it, so it is named by its recording.
+            - name: POCKET_TTS_DEFAULT_VOICE
+              value: hf://kyutai/tts-voices/unmute-prod-website/developpeuse-3.wav
+            - name: POCKET_TTS_VOICE_CACHE_DIR
+              value: /data/voice_cache
+            - name: HF_HOME
+              value: /data/huggingface
+            - name: POCKET_TTS_LOG_DIR
+              value: /app/logs
+          ports:
+            - containerPort: 49112
+          # The first start downloads the model from Hugging Face.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 49112
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 49112
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 49112
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '4'
+              memory: 3Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: logs
+              mountPath: /app/logs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          hostPath:
+            path: "{{ .Values.userspace.appData }}/data"
+            type: DirectoryOrCreate
+        - name: logs
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pockettts
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: pockettts
+  ports:
+    - name: http
+      port: 49112
+      targetPort: 49112
+---
+# Behind the shared entrance; Olares routes `<hash>.shared.olares.com` here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sharedentrances-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    io.kompose.service: pockettts
+  ports:
+    - name: http
+      port: 80
+      targetPort: 49112
