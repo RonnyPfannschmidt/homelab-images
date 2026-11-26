@@ -22,11 +22,9 @@ spec:
       # The server ignores SIGTERM; holds nothing worth the default 30 s.
       terminationGracePeriodSeconds: 5
       automountServiceAccountToken: false
+      # Only fsGroup at the pod: Olares injects a root init container for
+      # appData, and a pod-wide runAsNonRoot stops it from starting.
       securityContext:
-        runAsNonRoot: true
-        # The image's `pockettts` user.
-        runAsUser: 1000
-        runAsGroup: 1000
         fsGroup: 1000
       containers:
         - name: pockettts
@@ -63,6 +61,9 @@ spec:
               path: /health
               port: 49112
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

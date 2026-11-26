@@ -8,7 +8,7 @@ metadata:
   icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
   description: Kyutai Pocket TTS on the CPU, behind an OpenAI-compatible speech API
   title: Pocket TTS
-  version: 0.1.0
+  version: 0.1.1
   # Not "AI Agents": openwebui-sync treats that category as a model-serving
   # app and would add it to Open WebUI as a chat model.
   categories:

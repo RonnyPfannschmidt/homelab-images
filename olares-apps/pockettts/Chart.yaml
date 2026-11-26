@@ -3,4 +3,4 @@ appVersion: '3.0.2'
 description: Kyutai Pocket TTS on the CPU, behind an OpenAI-compatible speech API
 name: pockettts
 type: application
-version: '0.1.0'
+version: '0.1.1'
