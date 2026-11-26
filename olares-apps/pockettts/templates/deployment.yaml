@@ -19,6 +19,8 @@ spec:
         io.kompose.service: pockettts
     spec:
       enableServiceLinks: false
+      # The server ignores SIGTERM; holds nothing worth the default 30 s.
+      terminationGracePeriodSeconds: 5
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -34,10 +36,9 @@ spec:
             # English with that speaker's accent.
             - name: POCKET_TTS_LANGUAGE
               value: english
-            # Kyutai's `estelle`. The server's own list of built-in voices
-            # predates it, so it is named by its recording.
+            # Kyutai's French speaker, built into Pocket TTS 3.0.2; no login.
             - name: POCKET_TTS_DEFAULT_VOICE
-              value: hf://kyutai/tts-voices/unmute-prod-website/developpeuse-3.wav
+              value: estelle
             - name: POCKET_TTS_VOICE_CACHE_DIR
               value: /data/voice_cache
             - name: HF_HOME

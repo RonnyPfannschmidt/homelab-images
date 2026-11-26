@@ -4,9 +4,9 @@ workloads:
   pockettts:
     replicaCount: 1
 
-# 2.5.4, the newest published release. The project builds images only for
-# tags, so its `main` tag is an older February build.
-image: ghcr.io/teddybear082/pocket-tts-openai_streaming_server@sha256:0e8341241c07e6ec550e3290ba209c8514fadbc335f6314b53c48f0d5156fb36
+# Built from apps/pockettts by build-pockettts.yml, which fails while this
+# pins anything but that build.
+image: ghcr.io/ronnypfannschmidt/pockettts@sha256:814a6c90e031819576b2914fdcf348788b43281921defbed0697ba0c3db74af7
 
 # Olares fills this at install time from `permission.appData`.
 userspace:
