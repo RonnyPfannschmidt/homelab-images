@@ -57,7 +57,9 @@ spec:
               sha = "ef0724c5b79297e481017be85769832bc26eb220c984ecba2b0e1b0c8426312b"
               dest = pathlib.Path("/data/cvec") / name
               if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() == sha:
-                  raise SystemExit(f"{dest} present")
+                  # A string to SystemExit exits 1: print, then leave with 0.
+                  print(f"{dest} present")
+                  raise SystemExit(0)
               base = os.environ.get("HF_ENDPOINT") or "https://huggingface.co"
               url = f"{base.rstrip('/')}/Cudecnik/Qwen3.8-Flash-Next-refusal-projection/resolve/{rev}/{name}"
               data = urllib.request.urlopen(url, timeout=120).read()
